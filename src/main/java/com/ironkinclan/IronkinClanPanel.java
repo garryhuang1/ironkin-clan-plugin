@@ -35,6 +35,8 @@ class IronkinClanPanel extends PluginPanel
 	private final JPanel logSection = new JPanel(new BorderLayout());
 	private final JLabel trackedItemsPlaceholder = new JLabel("No items loaded yet");
 
+	private Runnable onActivate;
+
 	@Inject
 	IronkinClanPanel(ItemManager itemManager)
 	{
@@ -82,6 +84,20 @@ class IronkinClanPanel extends PluginPanel
 	void setLogVisible(boolean visible)
 	{
 		SwingUtilities.invokeLater(() -> logSection.setVisible(visible));
+	}
+
+	void setOnActivate(Runnable onActivate)
+	{
+		this.onActivate = onActivate;
+	}
+
+	@Override
+	public void onActivate()
+	{
+		if (onActivate != null)
+		{
+			onActivate.run();
+		}
 	}
 
 	private static JPanel sectionHeader(String text)
@@ -132,7 +148,7 @@ class IronkinClanPanel extends PluginPanel
 		slot.setPreferredSize(new Dimension(ICON_SLOT_SIZE, ICON_SLOT_SIZE));
 		slot.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		slot.setBorder(BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR));
-		slot.setToolTipText(item.name + " (" + item.id + ")");
+		slot.setToolTipText(item.name);
 		slot.add(icon, BorderLayout.CENTER);
 		return slot;
 	}

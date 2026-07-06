@@ -8,6 +8,7 @@ import java.awt.Image;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
@@ -18,11 +19,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import javax.imageio.ImageIO;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.events.NpcLootReceived;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStack;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
@@ -71,6 +75,12 @@ public class IronkinClanPlugin extends Plugin
 	@Inject
 	private IronkinClanPanel panel;
 
+	@Inject
+	private ItemManager itemManager;
+
+	@Inject
+	private ClientThread clientThread;
+
 	private final Map<Integer, String> trackedItems = new ConcurrentHashMap<>();
 	private final AtomicBoolean itemListRequested = new AtomicBoolean();
 	private NavigationButton navButton;
@@ -87,6 +97,7 @@ public class IronkinClanPlugin extends Plugin
 			.build();
 		clientToolbar.addNavigation(navButton);
 		panel.setLogVisible(config.showUploadLog());
+		panel.setOnActivate(this::refreshTrackedItems);
 
 		if (config.enableDropTracking())
 		{
@@ -163,6 +174,17 @@ public class IronkinClanPlugin extends Plugin
 		}
 	}
 
+	private void refreshTrackedItems()
+	{
+		if (!config.enableDropTracking())
+		{
+			return;
+		}
+
+		itemListRequested.set(false);
+		fetchTrackedItems();
+	}
+
 	private String baseUrl()
 	{
 		String url = config.serverUrl();
@@ -176,6 +198,12 @@ public class IronkinClanPlugin extends Plugin
 
 	private void fetchTrackedItems()
 	{
+		if (config.serverUrl().isEmpty())
+		{
+			log.warn("Ironkin Clan server URL is not configured; skipping tracked item list fetch");
+			return;
+		}
+
 		String apiKey = config.apiKey();
 		if (apiKey.isEmpty())
 		{
@@ -211,6 +239,7 @@ public class IronkinClanPlugin extends Plugin
 			@Override
 			public void onResponse(Call call, Response response)
 			{
+				TrackedItemListResponse body;
 				try (Response r = response)
 				{
 					if (!r.isSuccessful() || r.body() == null)
@@ -220,28 +249,37 @@ public class IronkinClanPlugin extends Plugin
 						return;
 					}
 
-					TrackedItemListResponse body = gson.fromJson(r.body().charStream(), TrackedItemListResponse.class);
+					body = gson.fromJson(r.body().charStream(), TrackedItemListResponse.class);
 					if (body == null || body.items == null)
 					{
 						log.warn("Ironkin tracked item list response was empty or malformed");
 						itemListRequested.set(false);
 						return;
 					}
-
-					for (TrackedItem item : body.items)
-					{
-						trackedItems.put(item.id, item.name);
-					}
-
-					panel.setTrackedItems(body.items);
-
-					log.debug("Loaded {} tracked items for bingo {}", trackedItems.size(), body.bingoId);
 				}
 				catch (JsonSyntaxException e)
 				{
 					log.warn("Failed to parse Ironkin tracked item list", e);
 					itemListRequested.set(false);
+					return;
 				}
+
+				// The API only sends item IDs; resolve the canonical name from the client's own
+				// item cache. ItemManager must be called on the client thread.
+				clientThread.invoke(() ->
+				{
+					List<TrackedItem> resolved = new ArrayList<>(body.items.size());
+					for (BingoItem item : body.items)
+					{
+						String name = itemManager.getItemComposition(item.id).getName();
+						trackedItems.put(item.id, name);
+						resolved.add(new TrackedItem(item.id, name));
+					}
+
+					panel.setTrackedItems(resolved);
+
+					log.debug("Loaded {} tracked items for bingo {}", trackedItems.size(), body.bingoId);
+				});
 			}
 		});
 	}
@@ -297,7 +335,7 @@ public class IronkinClanPlugin extends Plugin
 					if (!r.isSuccessful())
 					{
 						log.warn("Ironkin drop report upload failed for item {}: HTTP {}", itemId, r.code());
-						logUpload("Failed to send " + itemName + " drop: HTTP " + r.code(), false);
+						logUpload("Failed to send " + itemName + " drop", false);
 					}
 					else
 					{
@@ -314,6 +352,8 @@ public class IronkinClanPlugin extends Plugin
 		{
 			panel.addLogEntry(text, success);
 		}
+
+		clientThread.invoke(() -> client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "[Ironkin Clan] " + text, null));
 	}
 
 	@Provides
@@ -325,13 +365,24 @@ public class IronkinClanPlugin extends Plugin
 	private static class TrackedItemListResponse
 	{
 		String bingoId;
-		List<TrackedItem> items;
+		List<BingoItem> items;
+	}
+
+	private static class BingoItem
+	{
+		int id;
 	}
 
 	static class TrackedItem
 	{
-		int id;
-		String name;
+		final int id;
+		final String name;
+
+		TrackedItem(int id, String name)
+		{
+			this.id = id;
+			this.name = name;
+		}
 	}
 
 	private static class DropReport

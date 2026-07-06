@@ -16,7 +16,7 @@ public interface IronkinClanConfig extends Config
 	)
 	default String serverUrl()
 	{
-		return "http://localhost:3000";
+		return "";
 	}
 
 	@ConfigItem(
