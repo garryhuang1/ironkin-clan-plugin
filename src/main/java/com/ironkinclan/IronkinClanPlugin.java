@@ -24,16 +24,17 @@ import net.runelite.api.Client;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.events.ConfigChanged;
-import net.runelite.client.events.NpcLootReceived;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStack;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.plugins.loottracker.LootReceived;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.DrawManager;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.util.ImageUtil;
+import net.runelite.http.api.loottracker.LootRecordType;
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.MediaType;
@@ -148,12 +149,18 @@ public class IronkinClanPlugin extends Plugin
 		}
 	}
 
-	// Known issue: only covers monster kill loot. Clue scroll rewards and raid chest loot
-	// (CoX/ToB/ToA) aren't detected - see README "Known Issues".
+	// Uses the built-in Loot Tracker plugin's LootReceived broadcast rather than NpcLootReceived,
+	// since Loot Tracker already funnels NPC kills, clue scroll rewards, raid/Barrows chests, and
+	// most minigame rewards through one addLoot() call that posts this event. This only fires if
+	// the user has the "Loot Tracker" plugin enabled (on by default, but can be disabled).
+	//
+	// PLAYER-type loot (PvP kills) is deliberately excluded and shouldn't be added: it would
+	// report another player's gear to a third-party server, which is explicitly called out as a
+	// rejected plugin behavior ("crowdsourcing data about other players... gear...").
 	@Subscribe
-	public void onNpcLootReceived(NpcLootReceived event)
+	public void onLootReceived(LootReceived event)
 	{
-		if (!config.enableDropTracking() || trackedItems.isEmpty())
+		if (!config.enableDropTracking() || trackedItems.isEmpty() || event.getType() == LootRecordType.PLAYER)
 		{
 			return;
 		}
