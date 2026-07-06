@@ -4,6 +4,7 @@ import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.Insets;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -30,7 +31,7 @@ class IronkinClanPanel extends PluginPanel
 
 	private final ItemManager itemManager;
 
-	private final JPanel trackedItemsPanel = new JPanel();
+	private final JPanel trackedItemsPanel = new WrappingFlowPanel(FlowLayout.LEFT, 4, 4);
 	private final JPanel logPanel = new JPanel();
 	private final JPanel logSection = new JPanel(new BorderLayout());
 	private final JLabel trackedItemsPlaceholder = new JLabel("No items loaded yet");
@@ -53,7 +54,6 @@ class IronkinClanPanel extends PluginPanel
 		topSection.add(sectionHeader("Tracked Items"));
 		topSection.add(Box.createRigidArea(new Dimension(0, 4)));
 
-		trackedItemsPanel.setLayout(new FlowLayout(FlowLayout.LEFT, 4, 4));
 		trackedItemsPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		trackedItemsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 		trackedItemsPlaceholder.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
@@ -178,5 +178,63 @@ class IronkinClanPanel extends PluginPanel
 	private static String escapeHtml(String text)
 	{
 		return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+	}
+
+	/**
+	 * FlowLayout's preferredLayoutSize() ignores wrapping (it reports the width/height needed
+	 * for a single row), so a FlowLayout panel nested in a BoxLayout parent never grows tall
+	 * enough to show wrapped rows. This recomputes the preferred height for the panel's actual
+	 * current width so multi-row content isn't clipped.
+	 */
+	private static class WrappingFlowPanel extends JPanel
+	{
+		WrappingFlowPanel(int align, int hgap, int vgap)
+		{
+			super(new FlowLayout(align, hgap, vgap));
+		}
+
+		@Override
+		public Dimension getPreferredSize()
+		{
+			int width = getParent() != null && getParent().getWidth() > 0 ? getParent().getWidth() : PANEL_WIDTH;
+
+			FlowLayout layout = (FlowLayout) getLayout();
+			int hgap = layout.getHgap();
+			int vgap = layout.getVgap();
+			Insets insets = getInsets();
+			int availableWidth = width - insets.left - insets.right;
+
+			int rowWidth = 0;
+			int rowHeight = 0;
+			int totalHeight = 0;
+			int rows = 0;
+
+			for (Component c : getComponents())
+			{
+				if (!c.isVisible())
+				{
+					continue;
+				}
+
+				Dimension d = c.getPreferredSize();
+				if (rowWidth > 0 && rowWidth + hgap + d.width > availableWidth)
+				{
+					totalHeight += rowHeight + vgap;
+					rowWidth = 0;
+					rowHeight = 0;
+				}
+
+				rowWidth += (rowWidth > 0 ? hgap : 0) + d.width;
+				rowHeight = Math.max(rowHeight, d.height);
+				rows++;
+			}
+
+			if (rows > 0)
+			{
+				totalHeight += rowHeight;
+			}
+
+			return new Dimension(width, totalHeight + insets.top + insets.bottom + vgap * 2);
+		}
 	}
 }
