@@ -73,7 +73,6 @@ public class IronkinClanPlugin extends Plugin
 	@Inject
 	private ClientToolbar clientToolbar;
 
-	@Inject
 	private IronkinClanPanel panel;
 
 	@Inject
@@ -89,6 +88,8 @@ public class IronkinClanPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
+		panel = new IronkinClanPanel(itemManager);
+
 		BufferedImage icon = ImageUtil.loadImageResource(getClass(), "icon.png");
 		navButton = NavigationButton.builder()
 			.tooltip("Ironkin Clan")

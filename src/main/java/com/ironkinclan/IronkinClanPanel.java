@@ -4,14 +4,14 @@ import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import javax.inject.Inject;
 import javax.swing.BorderFactory;
-import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -28,39 +28,42 @@ class IronkinClanPanel extends PluginPanel
 	private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault());
 	private static final int MAX_LOG_ENTRIES = 50;
 	private static final int ICON_SLOT_SIZE = 36;
+	private static final double TRACKED_ITEMS_WEIGHT_WITH_LOG = 0.7;
+	private static final double LOG_WEIGHT_WITH_LOG = 0.3;
 
 	private final ItemManager itemManager;
 
 	private final JPanel trackedItemsPanel = new WrappingFlowPanel(FlowLayout.LEFT, 4, 4);
+	private final JPanel topSection = new JPanel(new BorderLayout());
 	private final JPanel logPanel = new JPanel();
 	private final JPanel logSection = new JPanel(new BorderLayout());
 	private final JLabel trackedItemsPlaceholder = new JLabel("No items loaded yet");
+	private final GridBagConstraints topSectionConstraints = new GridBagConstraints();
+	private final GridBagConstraints logSectionConstraints = new GridBagConstraints();
 
 	private Runnable onActivate;
 
-	@Inject
 	IronkinClanPanel(ItemManager itemManager)
 	{
+		super(false);
 		this.itemManager = itemManager;
 
-		setLayout(new BorderLayout());
+		setLayout(new GridBagLayout());
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
 		setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
-		JPanel topSection = new JPanel();
-		topSection.setLayout(new BoxLayout(topSection, BoxLayout.Y_AXIS));
 		topSection.setBackground(ColorScheme.DARK_GRAY_COLOR);
-
-		topSection.add(sectionHeader("Tracked Items"));
-		topSection.add(Box.createRigidArea(new Dimension(0, 4)));
+		topSection.add(sectionHeader("Tracked Items"), BorderLayout.NORTH);
 
 		trackedItemsPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		trackedItemsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 		trackedItemsPlaceholder.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		trackedItemsPanel.add(trackedItemsPlaceholder);
-		topSection.add(trackedItemsPanel);
 
-		add(topSection, BorderLayout.NORTH);
+		JScrollPane trackedItemsScroll = new JScrollPane(trackedItemsPanel);
+		trackedItemsScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+
+		topSection.add(trackedItemsScroll, BorderLayout.CENTER);
 
 		logPanel.setLayout(new BoxLayout(logPanel, BoxLayout.Y_AXIS));
 		logPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
@@ -78,12 +81,40 @@ class IronkinClanPanel extends PluginPanel
 		logSection.add(sectionHeader("Upload Log"), BorderLayout.NORTH);
 		logSection.add(logScroll, BorderLayout.CENTER);
 
-		add(logSection, BorderLayout.CENTER);
+		topSectionConstraints.gridx = 0;
+		topSectionConstraints.gridy = 0;
+		topSectionConstraints.weightx = 1;
+		topSectionConstraints.fill = GridBagConstraints.BOTH;
+
+		logSectionConstraints.gridx = 0;
+		logSectionConstraints.gridy = 1;
+		logSectionConstraints.weightx = 1;
+		logSectionConstraints.fill = GridBagConstraints.BOTH;
+
+		add(topSection, topSectionConstraints);
+		add(logSection, logSectionConstraints);
+
+		updateSectionWeights(true);
 	}
 
 	void setLogVisible(boolean visible)
 	{
-		SwingUtilities.invokeLater(() -> logSection.setVisible(visible));
+		SwingUtilities.invokeLater(() ->
+		{
+			logSection.setVisible(visible);
+			updateSectionWeights(visible);
+		});
+	}
+
+	private void updateSectionWeights(boolean logVisible)
+	{
+		GridBagLayout layout = (GridBagLayout) getLayout();
+		topSectionConstraints.weighty = logVisible ? TRACKED_ITEMS_WEIGHT_WITH_LOG : 1.0;
+		logSectionConstraints.weighty = logVisible ? LOG_WEIGHT_WITH_LOG : 0.0;
+		layout.setConstraints(topSection, topSectionConstraints);
+		layout.setConstraints(logSection, logSectionConstraints);
+		revalidate();
+		repaint();
 	}
 
 	void setOnActivate(Runnable onActivate)
