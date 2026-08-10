@@ -189,13 +189,13 @@ public class IronkinClanPlugin extends Plugin
 	}
 
 	// Drop upload results are actionable per-event feedback, so they're echoed to game chat in
-	// addition to the panel log.
+	// addition to the panel log. The panel always records the entry regardless of showDebugLog -
+	// that setting only controls whether the log section is visible (see setLogVisible), so
+	// toggling it on later reveals everything that happened while it was hidden instead of only
+	// entries logged from that point forward.
 	private void logUploadEvent(String text, boolean success)
 	{
-		if (config.showDebugLog())
-		{
-			panel.addLogEntry(text, success);
-		}
+		panel.addLogEntry(text, success);
 
 		clientThread.invoke(() -> client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "[Ironkin Clan] " + text, null));
 	}
@@ -204,10 +204,7 @@ public class IronkinClanPlugin extends Plugin
 	// not per-event feedback, so they only go to the panel log rather than spamming game chat.
 	private void logDiagnostic(String text, boolean success)
 	{
-		if (config.showDebugLog())
-		{
-			panel.addLogEntry(text, success);
-		}
+		panel.addLogEntry(text, success);
 	}
 
 	@Provides
