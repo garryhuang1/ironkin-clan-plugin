@@ -1,5 +1,7 @@
-package com.ironkinclan;
+package com.ironkinclan.ui;
 
+import com.ironkinclan.model.TrackedEventGroup;
+import com.ironkinclan.model.TrackedItem;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
@@ -24,7 +26,7 @@ import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.PluginPanel;
 
-class IronkinClanPanel extends PluginPanel
+public class IronkinClanPanel extends PluginPanel
 {
 	private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault());
 	private static final int MAX_LOG_ENTRIES = 50;
@@ -44,7 +46,7 @@ class IronkinClanPanel extends PluginPanel
 
 	private Runnable onActivate;
 
-	IronkinClanPanel(ItemManager itemManager)
+	public IronkinClanPanel(ItemManager itemManager)
 	{
 		super(false);
 		this.itemManager = itemManager;
@@ -99,7 +101,7 @@ class IronkinClanPanel extends PluginPanel
 		updateSectionWeights(true);
 	}
 
-	void setLogVisible(boolean visible)
+	public void setLogVisible(boolean visible)
 	{
 		SwingUtilities.invokeLater(() ->
 		{
@@ -119,7 +121,7 @@ class IronkinClanPanel extends PluginPanel
 		repaint();
 	}
 
-	void setOnActivate(Runnable onActivate)
+	public void setOnActivate(Runnable onActivate)
 	{
 		this.onActivate = onActivate;
 	}
@@ -147,7 +149,7 @@ class IronkinClanPanel extends PluginPanel
 		return wrapper;
 	}
 
-	void setTrackedItems(List<TrackedEventGroup> events)
+	public void setTrackedItems(List<TrackedEventGroup> events)
 	{
 		SwingUtilities.invokeLater(() ->
 		{
@@ -210,7 +212,7 @@ class IronkinClanPanel extends PluginPanel
 		return slot;
 	}
 
-	void addLogEntry(String text, boolean success)
+	public void addLogEntry(String text, boolean success)
 	{
 		SwingUtilities.invokeLater(() ->
 		{

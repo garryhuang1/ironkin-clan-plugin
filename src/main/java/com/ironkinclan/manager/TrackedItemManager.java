@@ -1,7 +1,11 @@
-package com.ironkinclan;
+package com.ironkinclan.manager;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
+import com.ironkinclan.api.IronkinClanApiClient;
+import com.ironkinclan.config.IronkinClanConfig;
+import com.ironkinclan.model.TrackedEventGroup;
+import com.ironkinclan.model.TrackedItem;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -25,9 +29,9 @@ import okhttp3.Response;
  * resolving item names on the client thread via {@link ItemManager}.
  */
 @Slf4j
-class TrackedItemManager
+public class TrackedItemManager
 {
-	interface Listener
+	public interface Listener
 	{
 		void onTrackedItemsUpdated(List<TrackedEventGroup> events);
 	}
@@ -40,7 +44,7 @@ class TrackedItemManager
 	private final ClientThread clientThread;
 
 	@Inject
-	TrackedItemManager(IronkinClanConfig config, IronkinClanApiClient apiClient, OkHttpClient httpClient,
+	public TrackedItemManager(IronkinClanConfig config, IronkinClanApiClient apiClient, OkHttpClient httpClient,
 		Gson gson, ItemManager itemManager, ClientThread clientThread)
 	{
 		this.config = config;
@@ -60,27 +64,27 @@ class TrackedItemManager
 	private Listener listener;
 	private DiagnosticListener diagnosticListener;
 
-	void setListener(Listener listener)
+	public void setListener(Listener listener)
 	{
 		this.listener = listener;
 	}
 
-	void setDiagnosticListener(DiagnosticListener diagnosticListener)
+	public void setDiagnosticListener(DiagnosticListener diagnosticListener)
 	{
 		this.diagnosticListener = diagnosticListener;
 	}
 
-	boolean hasTrackedItems()
+	public boolean hasTrackedItems()
 	{
 		return !itemNames.isEmpty();
 	}
 
-	String getItemName(int itemId)
+	public String getItemName(int itemId)
 	{
 		return itemNames.get(itemId);
 	}
 
-	List<String> getEventIdsForItem(int itemId)
+	public List<String> getEventIdsForItem(int itemId)
 	{
 		List<String> matches = new ArrayList<>();
 		for (Map.Entry<String, Set<Integer>> entry : eventItemIds.entrySet())
@@ -93,14 +97,14 @@ class TrackedItemManager
 		return matches;
 	}
 
-	void reset()
+	public void reset()
 	{
 		eventItemIds.clear();
 		itemNames.clear();
 		itemListRequested.set(false);
 	}
 
-	void refresh()
+	public void refresh()
 	{
 		if (!config.enableDropTracking())
 		{
@@ -111,7 +115,7 @@ class TrackedItemManager
 		fetch();
 	}
 
-	void fetch()
+	public void fetch()
 	{
 		if (config.serverUrl().isEmpty())
 		{

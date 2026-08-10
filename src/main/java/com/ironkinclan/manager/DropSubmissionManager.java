@@ -1,7 +1,8 @@
-package com.ironkinclan;
+package com.ironkinclan.manager;
 
 import com.google.gson.Gson;
 import com.google.gson.annotations.SerializedName;
+import com.ironkinclan.api.IronkinClanApiClient;
 import java.awt.Image;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
@@ -24,7 +25,7 @@ import okhttp3.Response;
  * Captures a screenshot of a tracked item drop and uploads it to the Ironkin server.
  */
 @Slf4j
-class DropSubmissionManager
+public class DropSubmissionManager
 {
 	private final IronkinClanApiClient apiClient;
 	private final OkHttpClient httpClient;
@@ -33,7 +34,7 @@ class DropSubmissionManager
 	private final ScheduledExecutorService executor;
 
 	@Inject
-	DropSubmissionManager(IronkinClanApiClient apiClient, OkHttpClient httpClient, Gson gson,
+	public DropSubmissionManager(IronkinClanApiClient apiClient, OkHttpClient httpClient, Gson gson,
 		DrawManager drawManager, ScheduledExecutorService executor)
 	{
 		this.apiClient = apiClient;
@@ -45,12 +46,12 @@ class DropSubmissionManager
 
 	private DiagnosticListener listener;
 
-	void setListener(DiagnosticListener listener)
+	public void setListener(DiagnosticListener listener)
 	{
 		this.listener = listener;
 	}
 
-	void reportDrop(String eventId, String username, int itemId, String itemName)
+	public void reportDrop(String eventId, String username, int itemId, String itemName)
 	{
 		long timestamp = System.currentTimeMillis();
 		drawManager.requestNextFrameListener(image -> executor.execute(() -> uploadDrop(eventId, username, itemId, itemName, timestamp, image)));

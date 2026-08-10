@@ -1,6 +1,8 @@
-package com.ironkinclan;
+package com.ironkinclan.manager;
 
 import com.google.gson.Gson;
+import com.ironkinclan.api.IronkinClanApiClient;
+import com.ironkinclan.config.IronkinClanConfig;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.util.List;

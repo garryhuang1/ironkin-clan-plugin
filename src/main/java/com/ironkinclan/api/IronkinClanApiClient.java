@@ -1,32 +1,34 @@
-package com.ironkinclan;
+package com.ironkinclan.api;
 
+import com.ironkinclan.config.IronkinClanConfig;
 import javax.inject.Inject;
 import okhttp3.MediaType;
 import okhttp3.Request;
 
 /**
  * Builds authenticated requests against the Ironkin server's events API, shared by
- * {@link TrackedItemManager} and {@link DropSubmissionManager}.
+ * {@link com.ironkinclan.manager.TrackedItemManager} and
+ * {@link com.ironkinclan.manager.DropSubmissionManager}.
  */
-class IronkinClanApiClient
+public class IronkinClanApiClient
 {
-	static final String API_KEY_HEADER = "x-api-key";
-	static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
+	public static final String API_KEY_HEADER = "x-api-key";
+	public static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
 	private final IronkinClanConfig config;
 
 	@Inject
-	IronkinClanApiClient(IronkinClanConfig config)
+	public IronkinClanApiClient(IronkinClanConfig config)
 	{
 		this.config = config;
 	}
 
-	Request.Builder newItemListRequest()
+	public Request.Builder newItemListRequest()
 	{
 		return authenticatedRequest(baseUrl() + "/events/item-list");
 	}
 
-	Request.Builder newSubmissionRequest(String eventId)
+	public Request.Builder newSubmissionRequest(String eventId)
 	{
 		return authenticatedRequest(baseUrl() + "/events/" + eventId + "/submissions");
 	}

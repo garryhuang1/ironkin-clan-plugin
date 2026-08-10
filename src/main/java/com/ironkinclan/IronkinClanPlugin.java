@@ -1,6 +1,10 @@
 package com.ironkinclan;
 
 import com.google.inject.Provides;
+import com.ironkinclan.config.IronkinClanConfig;
+import com.ironkinclan.manager.DropSubmissionManager;
+import com.ironkinclan.manager.TrackedItemManager;
+import com.ironkinclan.ui.IronkinClanPanel;
 import java.awt.image.BufferedImage;
 import java.util.Collections;
 import javax.inject.Inject;

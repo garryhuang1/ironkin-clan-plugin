@@ -1,4 +1,4 @@
-package com.ironkinclan;
+package com.ironkinclan.config;
 
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;

@@ -1,5 +1,6 @@
-package com.ironkinclan;
+package com.ironkinclan.api;
 
+import com.ironkinclan.config.IronkinClanConfig;
 import okhttp3.Request;
 import org.junit.Before;
 import org.junit.Test;
