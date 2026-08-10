@@ -5,6 +5,8 @@ import com.ironkinclan.api.IronkinClanApiClient;
 import com.ironkinclan.config.IronkinClanConfig;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ScheduledExecutorService;
 import net.runelite.client.ui.DrawManager;
@@ -96,7 +98,7 @@ public class DropSubmissionManagerTest
 	{
 		respondWith(200);
 
-		manager.uploadDrop("bounty-123", "PlayerName", 20997, "Twisted bow", 1720280000000L, testImage());
+		manager.uploadDrop("bounty-123", "PlayerName", 20997, "Twisted bow", 1720280000000L, Collections.emptyList(), testImage());
 
 		ArgumentCaptor<Request> requestCaptor = ArgumentCaptor.forClass(Request.class);
 		verify(httpClient).newCall(requestCaptor.capture());
@@ -114,7 +116,7 @@ public class DropSubmissionManagerTest
 	{
 		respondWith(200);
 
-		manager.uploadDrop("bounty-123", "PlayerName", 20997, "Twisted bow", 1720280000000L, testImage());
+		manager.uploadDrop("bounty-123", "PlayerName", 20997, "Twisted bow", 1720280000000L, Collections.emptyList(), testImage());
 
 		ArgumentCaptor<Request> requestCaptor = ArgumentCaptor.forClass(Request.class);
 		verify(httpClient).newCall(requestCaptor.capture());
@@ -131,11 +133,30 @@ public class DropSubmissionManagerTest
 	}
 
 	@Test
+	public void uploadDrop_withParticipants_requestBody_containsParticipants() throws IOException
+	{
+		respondWith(200);
+
+		manager.uploadDrop("bounty-123", "PlayerName", 20997, "Twisted bow", 1720280000000L,
+			Arrays.asList("Clanmate1", "Clanmate2"), testImage());
+
+		ArgumentCaptor<Request> requestCaptor = ArgumentCaptor.forClass(Request.class);
+		verify(httpClient).newCall(requestCaptor.capture());
+		Request request = requestCaptor.getValue();
+
+		Buffer buffer = new Buffer();
+		request.body().writeTo(buffer);
+		String json = buffer.readUtf8();
+
+		assertTrue(json.contains("\"participants\":[\"Clanmate1\",\"Clanmate2\"]"));
+	}
+
+	@Test
 	public void uploadDrop_httpError_notifiesListenerFalse()
 	{
 		respondWith(500);
 
-		manager.uploadDrop("bounty-123", "PlayerName", 20997, "Twisted bow", 1720280000000L, testImage());
+		manager.uploadDrop("bounty-123", "PlayerName", 20997, "Twisted bow", 1720280000000L, Collections.emptyList(), testImage());
 
 		verify(listener).onDiagnosticEvent(any(String.class), eq(false));
 	}
@@ -145,7 +166,7 @@ public class DropSubmissionManagerTest
 	{
 		respondWithFailure(new IOException("connection refused"));
 
-		manager.uploadDrop("bounty-123", "PlayerName", 20997, "Twisted bow", 1720280000000L, testImage());
+		manager.uploadDrop("bounty-123", "PlayerName", 20997, "Twisted bow", 1720280000000L, Collections.emptyList(), testImage());
 
 		verify(listener).onDiagnosticEvent(any(String.class), eq(false));
 	}
@@ -155,8 +176,8 @@ public class DropSubmissionManagerTest
 	{
 		respondWith(200);
 
-		manager.uploadDrop("bounty-123", "PlayerName", 20997, "Twisted bow", 1720280000000L, testImage());
-		manager.uploadDrop("botw-123", "PlayerName", 20997, "Twisted bow", 1720280000000L, testImage());
+		manager.uploadDrop("bounty-123", "PlayerName", 20997, "Twisted bow", 1720280000000L, Collections.emptyList(), testImage());
+		manager.uploadDrop("botw-123", "PlayerName", 20997, "Twisted bow", 1720280000000L, Collections.emptyList(), testImage());
 
 		ArgumentCaptor<Request> requestCaptor = ArgumentCaptor.forClass(Request.class);
 		verify(httpClient, times(2)).newCall(requestCaptor.capture());

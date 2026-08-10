@@ -8,6 +8,8 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Base64;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.ScheduledExecutorService;
 import javax.imageio.ImageIO;
 import javax.inject.Inject;
@@ -53,13 +55,20 @@ public class DropSubmissionManager
 
 	public void reportDrop(String eventId, String username, int itemId, String itemName)
 	{
+		reportDrop(eventId, username, itemId, itemName, Collections.emptyList());
+	}
+
+	// participants is the set of other nearby clan members to credit alongside username - only
+	// populated for group boss kills (see GroupBossRegistry), empty otherwise.
+	public void reportDrop(String eventId, String username, int itemId, String itemName, List<String> participants)
+	{
 		long timestamp = System.currentTimeMillis();
-		drawManager.requestNextFrameListener(image -> executor.execute(() -> uploadDrop(eventId, username, itemId, itemName, timestamp, image)));
+		drawManager.requestNextFrameListener(image -> executor.execute(() -> uploadDrop(eventId, username, itemId, itemName, timestamp, participants, image)));
 	}
 
 	// Package-private (rather than private) so unit tests can exercise the encode/upload logic
 	// directly without needing to drive the DrawManager frame-capture pipeline.
-	void uploadDrop(String eventId, String username, int itemId, String itemName, long timestamp, Image image)
+	void uploadDrop(String eventId, String username, int itemId, String itemName, long timestamp, List<String> participants, Image image)
 	{
 		String imageData;
 		try
@@ -79,7 +88,7 @@ public class DropSubmissionManager
 		log.debug("Encoded {} drop screenshot for {}: {} base64 chars", itemName, username, imageData.length());
 		notifyListener("Captured screenshot for " + itemName + " drop", true);
 
-		DropReport report = new DropReport(username, itemId, timestamp, imageData);
+		DropReport report = new DropReport(username, itemId, timestamp, imageData, participants);
 		RequestBody body = RequestBody.create(IronkinClanApiClient.JSON, gson.toJson(report));
 
 		Request request = apiClient.newSubmissionRequest(eventId)
@@ -132,13 +141,16 @@ public class DropSubmissionManager
 		final long timestamp;
 		@SerializedName("imageData")
 		final String imageData;
+		@SerializedName("participants")
+		final List<String> participants;
 
-		DropReport(String username, int itemId, long timestamp, String imageData)
+		DropReport(String username, int itemId, long timestamp, String imageData, List<String> participants)
 		{
 			this.username = username;
 			this.itemId = itemId;
 			this.timestamp = timestamp;
 			this.imageData = imageData;
+			this.participants = participants;
 		}
 	}
 }

@@ -7,6 +7,7 @@ A RuneLite plugin for the Ironkin clan that tracks bingo item drops. When a trac
 - Fetches every active event's tracked item list from the clan server (keyed off your API key — no manual event selection needed) and caches it in memory
 - Detects loot matching a tracked item ID from monster kills, clue scroll rewards, raid/Barrows chests, and most minigame rewards — via the built-in Loot Tracker plugin's `LootReceived` broadcast, rather than reimplementing detection for each source
 - Screenshots the client window and uploads the drop (player name, item ID, timestamp, screenshot) to the server, once per event that tracks the dropped item
+- For drops reported to the `pvm-entry` event (group boss PvM entry-fee tracking), also includes nearby clan members (from RuneLite's in-game Clan) as `participants` on the submission, so credit isn't limited to whoever received the loot roll. The clan must be a strict majority of the nearby group (e.g. 2/2, 2/3, 3/4, 3/5, 4/6, 4/7) or the drop is skipped for this event entirely - solo kills never qualify
 - Sidebar panel showing tracked items grouped by event (with icons) and a log of upload attempts
 - In-game chat message on every upload attempt, success or failure
 
@@ -48,9 +49,11 @@ Drop tracking won't fetch anything or do anything until the server URL and API k
     "username": "PlayerName",
     "itemid": 532,
     "timestamp": 1720280000000,
-    "imageData": "<base64 PNG>"
+    "imageData": "<base64 PNG>",
+    "participants": ["Clanmate1", "Clanmate2"]
   }
   ```
+  `participants` lists other nearby clan members (from RuneLite's in-game Clan) to credit alongside `username`. It's only populated for drops reported to the `pvm-entry` event ID (hardcoded in `IronkinClanPlugin.GROUP_BOSS_EVENT_ID`) — an empty array for every other event.
 
 ## Known Issues
 

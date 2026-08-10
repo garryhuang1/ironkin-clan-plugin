@@ -2,7 +2,9 @@ package com.ironkinclan;
 
 import com.google.inject.Provides;
 import com.ironkinclan.config.IronkinClanConfig;
+import com.ironkinclan.manager.ClanMemberManager;
 import com.ironkinclan.manager.DropSubmissionManager;
+import com.ironkinclan.manager.GroupComposition;
 import com.ironkinclan.manager.TrackedItemManager;
 import com.ironkinclan.model.TrackedEventGroup;
 import com.ironkinclan.ui.EventPasswordOverlay;
@@ -40,6 +42,10 @@ public class IronkinClanPlugin extends Plugin
 	// warnings (e.g. failed item list fetches), not just drop upload results.
 	private static final String OLD_SHOW_UPLOAD_LOG_KEY = "showUploadLog";
 
+	// Server-side event ID for the group boss PvM entry-fee event. Drops reported to this event
+	// also credit nearby clan members, since group bosses are commonly killed together.
+	private static final String GROUP_BOSS_EVENT_ID = "pvm-entry";
+
 	@Inject
 	private Client client;
 
@@ -69,6 +75,9 @@ public class IronkinClanPlugin extends Plugin
 
 	@Inject
 	private DropSubmissionManager dropSubmissionManager;
+
+	@Inject
+	private ClanMemberManager clanMemberManager;
 
 	private IronkinClanPanel panel;
 	private NavigationButton navButton;
@@ -234,6 +243,10 @@ public class IronkinClanPlugin extends Plugin
 		String username = client.getLocalPlayer().getName();
 		log.debug("Processing loot event from {} ({}): {} item stack(s)", event.getName(), event.getType(), event.getItems().size());
 
+		// The nearby group is only relevant to the group boss event, so this is looked up at most
+		// once per loot event rather than unconditionally on every drop.
+		GroupComposition groupComposition = null;
+
 		for (ItemStack item : event.getItems())
 		{
 			String itemName = trackedItemManager.getItemName(item.getId());
@@ -255,7 +268,25 @@ public class IronkinClanPlugin extends Plugin
 
 			for (String eventId : eventIds)
 			{
-				dropSubmissionManager.reportDrop(eventId, username, item.getId(), itemName);
+				List<String> participants = Collections.emptyList();
+				if (GROUP_BOSS_EVENT_ID.equals(eventId))
+				{
+					if (groupComposition == null)
+					{
+						groupComposition = clanMemberManager.getNearbyGroupComposition();
+					}
+
+					if (!groupComposition.isClanMajority())
+					{
+						logDiagnostic("Skipping " + itemName + " for " + eventId + ": clan was not a majority of the group ("
+							+ groupComposition.clanPlayers + "/" + groupComposition.totalPlayers + ")", false);
+						continue;
+					}
+
+					participants = groupComposition.clanMembers;
+				}
+
+				dropSubmissionManager.reportDrop(eventId, username, item.getId(), itemName, participants);
 			}
 		}
 	}
