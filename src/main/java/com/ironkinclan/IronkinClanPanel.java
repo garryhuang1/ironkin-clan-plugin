@@ -4,6 +4,7 @@ import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
@@ -33,7 +34,7 @@ class IronkinClanPanel extends PluginPanel
 
 	private final ItemManager itemManager;
 
-	private final JPanel trackedItemsPanel = new WrappingFlowPanel(FlowLayout.LEFT, 4, 4);
+	private final JPanel trackedItemsContainer = new JPanel();
 	private final JPanel topSection = new JPanel(new BorderLayout());
 	private final JPanel logPanel = new JPanel();
 	private final JPanel logSection = new JPanel(new BorderLayout());
@@ -55,12 +56,13 @@ class IronkinClanPanel extends PluginPanel
 		topSection.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		topSection.add(sectionHeader("Tracked Items"), BorderLayout.NORTH);
 
-		trackedItemsPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		trackedItemsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		trackedItemsContainer.setLayout(new BoxLayout(trackedItemsContainer, BoxLayout.Y_AXIS));
+		trackedItemsContainer.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		trackedItemsContainer.setAlignmentX(Component.LEFT_ALIGNMENT);
 		trackedItemsPlaceholder.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		trackedItemsPanel.add(trackedItemsPlaceholder);
+		trackedItemsContainer.add(trackedItemsPlaceholder);
 
-		JScrollPane trackedItemsScroll = new JScrollPane(trackedItemsPanel);
+		JScrollPane trackedItemsScroll = new JScrollPane(trackedItemsContainer);
 		trackedItemsScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
 
 		topSection.add(trackedItemsScroll, BorderLayout.CENTER);
@@ -78,7 +80,7 @@ class IronkinClanPanel extends PluginPanel
 
 		logSection.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		logSection.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
-		logSection.add(sectionHeader("Upload Log"), BorderLayout.NORTH);
+		logSection.add(sectionHeader("Log"), BorderLayout.NORTH);
 		logSection.add(logScroll, BorderLayout.CENTER);
 
 		topSectionConstraints.gridx = 0;
@@ -145,30 +147,54 @@ class IronkinClanPanel extends PluginPanel
 		return wrapper;
 	}
 
-	void setTrackedItems(List<IronkinClanPlugin.TrackedItem> items)
+	void setTrackedItems(List<TrackedEventGroup> events)
 	{
 		SwingUtilities.invokeLater(() ->
 		{
-			trackedItemsPanel.removeAll();
+			trackedItemsContainer.removeAll();
 
-			if (items.isEmpty())
+			if (events.isEmpty())
 			{
-				trackedItemsPanel.add(trackedItemsPlaceholder);
+				trackedItemsContainer.add(trackedItemsPlaceholder);
 			}
 			else
 			{
-				for (IronkinClanPlugin.TrackedItem item : items)
+				for (TrackedEventGroup event : events)
 				{
-					trackedItemsPanel.add(createItemSlot(item));
+					trackedItemsContainer.add(createEventSection(event));
 				}
 			}
 
-			trackedItemsPanel.revalidate();
-			trackedItemsPanel.repaint();
+			trackedItemsContainer.revalidate();
+			trackedItemsContainer.repaint();
 		});
 	}
 
-	private JPanel createItemSlot(IronkinClanPlugin.TrackedItem item)
+	private JPanel createEventSection(TrackedEventGroup event)
+	{
+		JPanel section = new JPanel(new BorderLayout(0, 4));
+		section.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		section.setAlignmentX(Component.LEFT_ALIGNMENT);
+		section.setBorder(BorderFactory.createEmptyBorder(0, 0, 8, 0));
+
+		JLabel header = new JLabel(event.eventId);
+		header.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		header.setFont(header.getFont().deriveFont(Font.BOLD));
+
+		JPanel itemsPanel = new WrappingFlowPanel(FlowLayout.LEFT, 4, 4);
+		itemsPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		itemsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		for (TrackedItem item : event.items)
+		{
+			itemsPanel.add(createItemSlot(item));
+		}
+
+		section.add(header, BorderLayout.NORTH);
+		section.add(itemsPanel, BorderLayout.CENTER);
+		return section;
+	}
+
+	private JPanel createItemSlot(TrackedItem item)
 	{
 		JLabel icon = new JLabel();
 		icon.setHorizontalAlignment(SwingConstants.CENTER);

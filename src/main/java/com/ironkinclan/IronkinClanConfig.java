@@ -20,16 +20,6 @@ public interface IronkinClanConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "bingoId",
-		name = "Bingo ID",
-		description = "ID of the bingo whose tracked item list and drops should be reported"
-	)
-	default String bingoId()
-	{
-		return "";
-	}
-
-	@ConfigItem(
 		keyName = "apiKey",
 		name = "API Key",
 		description = "API key used to authenticate with the Ironkin server"
@@ -40,11 +30,11 @@ public interface IronkinClanConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "showUploadLog",
-		name = "Show upload log",
-		description = "Show a log of drop uploads in the plugin panel"
+		keyName = "showDebugLog",
+		name = "Show log",
+		description = "Show a log of drop uploads and diagnostic warnings (e.g. failed item list fetches) in the plugin panel"
 	)
-	default boolean showUploadLog()
+	default boolean showDebugLog()
 	{
 		return true;
 	}
