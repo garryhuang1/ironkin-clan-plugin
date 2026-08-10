@@ -105,7 +105,8 @@ public class DropSubmissionManagerTest
 		assertEquals("https://ironkin.example.com/events/bounty-123/submissions", request.url().toString());
 		assertEquals("secret-key", request.header(IronkinClanApiClient.API_KEY_HEADER));
 
-		verify(listener).onDiagnosticEvent(any(String.class), eq(true));
+		verify(listener).onDiagnosticEvent(eq("Captured screenshot for Twisted bow drop"), eq(true));
+		verify(listener).onDiagnosticEvent(eq("Sent Twisted bow drop for PlayerName to bounty-123"), eq(true));
 	}
 
 	@Test

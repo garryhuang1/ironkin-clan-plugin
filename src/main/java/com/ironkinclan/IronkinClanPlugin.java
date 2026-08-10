@@ -7,6 +7,7 @@ import com.ironkinclan.manager.TrackedItemManager;
 import com.ironkinclan.ui.IronkinClanPanel;
 import java.awt.image.BufferedImage;
 import java.util.Collections;
+import java.util.List;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
@@ -162,17 +163,32 @@ public class IronkinClanPlugin extends Plugin
 	@Subscribe
 	public void onLootReceived(LootReceived event)
 	{
-		if (!config.enableDropTracking() || !trackedItemManager.hasTrackedItems() || event.getType() == LootRecordType.PLAYER)
+		if (!config.enableDropTracking())
 		{
+			return;
+		}
+
+		if (event.getType() == LootRecordType.PLAYER)
+		{
+			logDiagnostic("Ignoring PLAYER-type loot from " + event.getName() + " - PvP loot is intentionally not tracked", false);
+			return;
+		}
+
+		if (!trackedItemManager.hasTrackedItems())
+		{
+			logDiagnostic("Ignoring loot from " + event.getName() + ": no tracked items loaded yet", false);
 			return;
 		}
 
 		if (client.getLocalPlayer() == null)
 		{
+			logDiagnostic("Ignoring loot from " + event.getName() + ": local player is not available", false);
 			return;
 		}
 
 		String username = client.getLocalPlayer().getName();
+		log.debug("Processing loot event from {} ({}): {} item stack(s)", event.getName(), event.getType(), event.getItems().size());
+
 		for (ItemStack item : event.getItems())
 		{
 			String itemName = trackedItemManager.getItemName(item.getId());
@@ -181,7 +197,18 @@ public class IronkinClanPlugin extends Plugin
 				continue;
 			}
 
-			for (String eventId : trackedItemManager.getEventIdsForItem(item.getId()))
+			List<String> eventIds = trackedItemManager.getEventIdsForItem(item.getId());
+			if (eventIds.isEmpty())
+			{
+				// Shouldn't happen - getItemName() only resolves names for items that came from
+				// an event's list in the first place - but log it if the two ever disagree.
+				logDiagnostic("Tracked item " + itemName + " (" + item.getId() + ") matched no events; skipping", false);
+				continue;
+			}
+
+			log.debug("Matched tracked item {} ({}) x{} - reporting to event(s) {}", item.getId(), itemName, item.getQuantity(), eventIds);
+
+			for (String eventId : eventIds)
 			{
 				dropSubmissionManager.reportDrop(eventId, username, item.getId(), itemName);
 			}

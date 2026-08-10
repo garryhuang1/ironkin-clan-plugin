@@ -77,6 +77,7 @@ public class DropSubmissionManager
 		}
 
 		log.debug("Encoded {} drop screenshot for {}: {} base64 chars", itemName, username, imageData.length());
+		notifyListener("Captured screenshot for " + itemName + " drop", true);
 
 		DropReport report = new DropReport(username, itemId, timestamp, imageData);
 		RequestBody body = RequestBody.create(IronkinClanApiClient.JSON, gson.toJson(report));
@@ -102,7 +103,7 @@ public class DropSubmissionManager
 					if (!r.isSuccessful())
 					{
 						log.warn("Ironkin drop report upload failed for item {} to event {}: HTTP {}", itemId, eventId, r.code());
-						notifyListener("Failed to send " + itemName + " drop to " + eventId, false);
+						notifyListener("Failed to send " + itemName + " drop to " + eventId + " (HTTP " + r.code() + ")", false);
 					}
 					else
 					{
