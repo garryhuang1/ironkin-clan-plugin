@@ -4,8 +4,11 @@ import com.google.inject.Provides;
 import com.ironkinclan.config.IronkinClanConfig;
 import com.ironkinclan.manager.DropSubmissionManager;
 import com.ironkinclan.manager.TrackedItemManager;
+import com.ironkinclan.model.TrackedEventGroup;
+import com.ironkinclan.ui.EventPasswordOverlay;
 import com.ironkinclan.ui.IronkinClanPanel;
 import java.awt.image.BufferedImage;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import javax.inject.Inject;
@@ -23,6 +26,7 @@ import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.plugins.loottracker.LootReceived;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
+import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.util.ImageUtil;
 import net.runelite.http.api.loottracker.LootRecordType;
 
@@ -49,6 +53,12 @@ public class IronkinClanPlugin extends Plugin
 	private ClientToolbar clientToolbar;
 
 	@Inject
+	private OverlayManager overlayManager;
+
+	@Inject
+	private EventPasswordOverlay eventPasswordOverlay;
+
+	@Inject
 	private ItemManager itemManager;
 
 	@Inject
@@ -62,6 +72,7 @@ public class IronkinClanPlugin extends Plugin
 
 	private IronkinClanPanel panel;
 	private NavigationButton navButton;
+	private List<TrackedEventGroup> lastTrackedEvents = Collections.emptyList();
 
 	@Override
 	protected void startUp()
@@ -82,7 +93,9 @@ public class IronkinClanPlugin extends Plugin
 		panel.setLogVisible(config.showDebugLog());
 		panel.setOnActivate(trackedItemManager::refresh);
 
-		trackedItemManager.setListener(panel::setTrackedItems);
+		overlayManager.add(eventPasswordOverlay);
+
+		trackedItemManager.setListener(this::onTrackedItemsUpdated);
 		trackedItemManager.setDiagnosticListener(this::logDiagnostic);
 		dropSubmissionManager.setListener(this::logUploadEvent);
 
@@ -96,10 +109,39 @@ public class IronkinClanPlugin extends Plugin
 	protected void shutDown()
 	{
 		clientToolbar.removeNavigation(navButton);
+		overlayManager.remove(eventPasswordOverlay);
 		trackedItemManager.setListener(null);
 		trackedItemManager.setDiagnosticListener(null);
 		trackedItemManager.reset();
 		dropSubmissionManager.setListener(null);
+		lastTrackedEvents = Collections.emptyList();
+	}
+
+	private void onTrackedItemsUpdated(List<TrackedEventGroup> events)
+	{
+		lastTrackedEvents = events;
+		panel.setTrackedItems(events);
+		updateEventPasswordOverlay();
+	}
+
+	private void updateEventPasswordOverlay()
+	{
+		if (!config.showEventPasswords())
+		{
+			eventPasswordOverlay.setPasswordEvents(Collections.emptyList());
+			return;
+		}
+
+		List<TrackedEventGroup> passwordEvents = new ArrayList<>();
+		for (TrackedEventGroup event : lastTrackedEvents)
+		{
+			if (event.eventPassword != null && !event.eventPassword.isEmpty())
+			{
+				passwordEvents.add(event);
+			}
+		}
+
+		eventPasswordOverlay.setPasswordEvents(passwordEvents);
 	}
 
 	private void migrateShowUploadLogKey()
@@ -132,7 +174,7 @@ public class IronkinClanPlugin extends Plugin
 			case "serverUrl":
 			case "apiKey":
 				trackedItemManager.reset();
-				panel.setTrackedItems(Collections.emptyList());
+				onTrackedItemsUpdated(Collections.emptyList());
 				if (config.enableDropTracking())
 				{
 					trackedItemManager.fetch();
@@ -146,6 +188,9 @@ public class IronkinClanPlugin extends Plugin
 				break;
 			case "showDebugLog":
 				panel.setLogVisible(config.showDebugLog());
+				break;
+			case "showEventPasswords":
+				updateEventPasswordOverlay();
 				break;
 			default:
 				break;

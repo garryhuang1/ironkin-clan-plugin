@@ -193,7 +193,7 @@ public class TrackedItemManager
 							groupItems.add(new TrackedItem(itemId, name));
 						}
 						eventItemIds.put(eventEntry.eventId, ids);
-						resolved.add(new TrackedEventGroup(eventEntry.eventId, groupItems));
+						resolved.add(new TrackedEventGroup(eventEntry.eventId, groupItems, eventEntry.eventPassword));
 					}
 
 					if (listener != null)
@@ -234,5 +234,6 @@ public class TrackedItemManager
 	{
 		String eventId;
 		List<Integer> items;
+		String eventPassword;
 	}
 }

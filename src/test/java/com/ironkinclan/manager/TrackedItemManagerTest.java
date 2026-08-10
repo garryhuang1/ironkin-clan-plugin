@@ -24,6 +24,7 @@ import org.mockito.ArgumentCaptor;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -161,6 +162,25 @@ public class TrackedItemManagerTest
 		ArgumentCaptor<List<TrackedEventGroup>> captor = ArgumentCaptor.forClass(List.class);
 		verify(listener).onTrackedItemsUpdated(captor.capture());
 		assertEquals(2, captor.getValue().size());
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	public void fetch_eventWithPassword_populatesEventPasswordOnGroup()
+	{
+		respondWithSuccess("{ \"events\": ["
+			+ "{ \"eventId\": \"bounty-123\", \"items\": [20997], \"eventPassword\": \"ironkin-password\" },"
+			+ "{ \"eventId\": \"botw-123\", \"items\": [11840] }"
+			+ "] }");
+
+		manager.fetch();
+
+		ArgumentCaptor<List<TrackedEventGroup>> captor = ArgumentCaptor.forClass(List.class);
+		verify(listener).onTrackedItemsUpdated(captor.capture());
+
+		List<TrackedEventGroup> events = captor.getValue();
+		assertEquals("ironkin-password", events.get(0).eventPassword);
+		assertNull(events.get(1).eventPassword);
 	}
 
 	@Test

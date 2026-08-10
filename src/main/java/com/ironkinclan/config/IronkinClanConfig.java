@@ -36,6 +36,16 @@ public interface IronkinClanConfig extends Config
 	)
 	default boolean showDebugLog()
 	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "showEventPasswords",
+		name = "Show event passwords",
+		description = "Shows an overlay with the password(s) for any tracked events that have one configured"
+	)
+	default boolean showEventPasswords()
+	{
 		return true;
 	}
 
