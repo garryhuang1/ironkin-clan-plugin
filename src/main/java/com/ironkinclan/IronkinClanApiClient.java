@@ -13,8 +13,13 @@ class IronkinClanApiClient
 	static final String API_KEY_HEADER = "x-api-key";
 	static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
+	private final IronkinClanConfig config;
+
 	@Inject
-	private IronkinClanConfig config;
+	IronkinClanApiClient(IronkinClanConfig config)
+	{
+		this.config = config;
+	}
 
 	Request.Builder newItemListRequest()
 	{

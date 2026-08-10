@@ -26,20 +26,22 @@ import okhttp3.Response;
 @Slf4j
 class DropSubmissionManager
 {
-	@Inject
-	private IronkinClanApiClient apiClient;
+	private final IronkinClanApiClient apiClient;
+	private final OkHttpClient httpClient;
+	private final Gson gson;
+	private final DrawManager drawManager;
+	private final ScheduledExecutorService executor;
 
 	@Inject
-	private OkHttpClient httpClient;
-
-	@Inject
-	private Gson gson;
-
-	@Inject
-	private DrawManager drawManager;
-
-	@Inject
-	private ScheduledExecutorService executor;
+	DropSubmissionManager(IronkinClanApiClient apiClient, OkHttpClient httpClient, Gson gson,
+		DrawManager drawManager, ScheduledExecutorService executor)
+	{
+		this.apiClient = apiClient;
+		this.httpClient = httpClient;
+		this.gson = gson;
+		this.drawManager = drawManager;
+		this.executor = executor;
+	}
 
 	private DiagnosticListener listener;
 
@@ -54,7 +56,9 @@ class DropSubmissionManager
 		drawManager.requestNextFrameListener(image -> executor.execute(() -> uploadDrop(eventId, username, itemId, itemName, timestamp, image)));
 	}
 
-	private void uploadDrop(String eventId, String username, int itemId, String itemName, long timestamp, Image image)
+	// Package-private (rather than private) so unit tests can exercise the encode/upload logic
+	// directly without needing to drive the DrawManager frame-capture pipeline.
+	void uploadDrop(String eventId, String username, int itemId, String itemName, long timestamp, Image image)
 	{
 		String imageData;
 		try

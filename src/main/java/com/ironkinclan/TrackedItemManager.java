@@ -32,23 +32,24 @@ class TrackedItemManager
 		void onTrackedItemsUpdated(List<TrackedEventGroup> events);
 	}
 
-	@Inject
-	private IronkinClanConfig config;
+	private final IronkinClanConfig config;
+	private final IronkinClanApiClient apiClient;
+	private final OkHttpClient httpClient;
+	private final Gson gson;
+	private final ItemManager itemManager;
+	private final ClientThread clientThread;
 
 	@Inject
-	private IronkinClanApiClient apiClient;
-
-	@Inject
-	private OkHttpClient httpClient;
-
-	@Inject
-	private Gson gson;
-
-	@Inject
-	private ItemManager itemManager;
-
-	@Inject
-	private ClientThread clientThread;
+	TrackedItemManager(IronkinClanConfig config, IronkinClanApiClient apiClient, OkHttpClient httpClient,
+		Gson gson, ItemManager itemManager, ClientThread clientThread)
+	{
+		this.config = config;
+		this.apiClient = apiClient;
+		this.httpClient = httpClient;
+		this.gson = gson;
+		this.itemManager = itemManager;
+		this.clientThread = clientThread;
+	}
 
 	// eventId -> item IDs tracked by that event
 	private final Map<String, Set<Integer>> eventItemIds = new ConcurrentHashMap<>();
