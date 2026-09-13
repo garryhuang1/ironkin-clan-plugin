@@ -3,6 +3,7 @@ package com.ironkinclan.manager;
 import com.google.gson.Gson;
 import com.google.gson.annotations.SerializedName;
 import com.ironkinclan.api.IronkinClanApiClient;
+import com.ironkinclan.api.RetryingCall;
 import java.awt.Image;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
@@ -95,7 +96,7 @@ public class DropSubmissionManager
 			.post(body)
 			.build();
 
-		httpClient.newCall(request).enqueue(new Callback()
+		RetryingCall.enqueue(httpClient, executor, request, new Callback()
 		{
 			@Override
 			public void onFailure(Call call, IOException e)

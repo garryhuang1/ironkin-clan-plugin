@@ -17,8 +17,10 @@ import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
+import net.runelite.api.GameState;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.api.events.GameStateChanged;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.game.ItemManager;
@@ -203,6 +205,20 @@ public class IronkinClanPlugin extends Plugin
 				break;
 			default:
 				break;
+		}
+	}
+
+	// The startUp() fetch above only fires once and, if it fails (e.g. the server is briefly
+	// unreachable while the client is still booting), nothing retries it unless the user happens
+	// to open the panel. Retrying on every login is a cheap, panel-independent backstop:
+	// fetch() is a no-op once the list has already loaded, so this only does real work when the
+	// initial attempt never succeeded.
+	@Subscribe
+	public void onGameStateChanged(GameStateChanged event)
+	{
+		if (event.getGameState() == GameState.LOGGED_IN && config.enableDropTracking())
+		{
+			trackedItemManager.fetch();
 		}
 	}
 

@@ -9,6 +9,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import net.runelite.client.ui.DrawManager;
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -26,6 +27,7 @@ import org.mockito.ArgumentCaptor;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -37,6 +39,7 @@ public class DropSubmissionManagerTest
 {
 	private OkHttpClient httpClient;
 	private Call call;
+	private ScheduledExecutorService executor;
 	private DiagnosticListener listener;
 	private DropSubmissionManager manager;
 
@@ -53,7 +56,15 @@ public class DropSubmissionManagerTest
 		when(httpClient.newCall(any(Request.class))).thenReturn(call);
 
 		DrawManager drawManager = mock(DrawManager.class);
-		ScheduledExecutorService executor = mock(ScheduledExecutorService.class);
+		executor = mock(ScheduledExecutorService.class);
+		// Run scheduled retries synchronously and immediately so tests don't need to deal with
+		// real delays - the backoff duration itself isn't the concern of these tests.
+		doAnswer(invocation ->
+		{
+			Runnable retry = invocation.getArgument(0);
+			retry.run();
+			return null;
+		}).when(executor).schedule(any(Runnable.class), anyLong(), any(TimeUnit.class));
 
 		manager = new DropSubmissionManager(apiClient, httpClient, new Gson(), drawManager, executor);
 
@@ -162,13 +173,57 @@ public class DropSubmissionManagerTest
 	}
 
 	@Test
-	public void uploadDrop_networkFailure_notifiesListenerFalse()
+	public void uploadDrop_networkFailure_retriesTwiceThenNotifiesListenerFalse()
 	{
 		respondWithFailure(new IOException("connection refused"));
 
 		manager.uploadDrop("bounty-123", "PlayerName", 20997, "Twisted bow", 1720280000000L, Collections.emptyList(), testImage());
 
+		// Initial attempt + 2 retries.
+		verify(httpClient, times(3)).newCall(any(Request.class));
 		verify(listener).onDiagnosticEvent(any(String.class), eq(false));
+	}
+
+	@Test
+	public void uploadDrop_networkFailure_retriesWithIncreasingBackoff()
+	{
+		respondWithFailure(new IOException("connection refused"));
+
+		manager.uploadDrop("bounty-123", "PlayerName", 20997, "Twisted bow", 1720280000000L, Collections.emptyList(), testImage());
+
+		ArgumentCaptor<Long> delayCaptor = ArgumentCaptor.forClass(Long.class);
+		verify(executor, times(2)).schedule(any(Runnable.class), delayCaptor.capture(), eq(TimeUnit.MILLISECONDS));
+		assertEquals(2000L, (long) delayCaptor.getAllValues().get(0));
+		assertEquals(4000L, (long) delayCaptor.getAllValues().get(1));
+	}
+
+	@Test
+	public void uploadDrop_networkFailureThenSuccessOnRetry_notifiesListenerTrue()
+	{
+		// Fail on the first attempt, then succeed on the retry.
+		doAnswer(invocation ->
+		{
+			Callback callback = invocation.getArgument(0);
+			callback.onFailure(call, new IOException("connection refused"));
+			return null;
+		}).doAnswer(invocation ->
+		{
+			Callback callback = invocation.getArgument(0);
+			Response response = new Response.Builder()
+				.request(new Request.Builder().url("https://ironkin.example.com/events/bounty-123/submissions").build())
+				.protocol(Protocol.HTTP_1_1)
+				.code(200)
+				.message("OK")
+				.body(ResponseBody.create(MediaType.get("text/plain"), ""))
+				.build();
+			callback.onResponse(call, response);
+			return null;
+		}).when(call).enqueue(any(Callback.class));
+
+		manager.uploadDrop("bounty-123", "PlayerName", 20997, "Twisted bow", 1720280000000L, Collections.emptyList(), testImage());
+
+		verify(httpClient, times(2)).newCall(any(Request.class));
+		verify(listener).onDiagnosticEvent(eq("Sent Twisted bow drop for PlayerName to bounty-123"), eq(true));
 	}
 
 	@Test

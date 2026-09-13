@@ -7,6 +7,8 @@ import com.ironkinclan.model.TrackedEventGroup;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import net.runelite.api.ItemComposition;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.game.ItemManager;
@@ -27,6 +29,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -42,6 +45,7 @@ public class TrackedItemManagerTest
 	private OkHttpClient httpClient;
 	private ItemManager itemManager;
 	private ClientThread clientThread;
+	private ScheduledExecutorService executor;
 	private Call call;
 	private TrackedItemManager manager;
 
@@ -72,7 +76,17 @@ public class TrackedItemManagerTest
 
 		when(httpClient.newCall(any(Request.class))).thenReturn(call);
 
-		manager = new TrackedItemManager(config, apiClient, httpClient, new Gson(), itemManager, clientThread);
+		executor = mock(ScheduledExecutorService.class);
+		// Run scheduled retries synchronously and immediately so tests don't need to deal with
+		// real delays - the backoff duration itself isn't the concern of these tests.
+		doAnswer(invocation ->
+		{
+			Runnable retry = invocation.getArgument(0);
+			retry.run();
+			return null;
+		}).when(executor).schedule(any(Runnable.class), anyLong(), any(TimeUnit.class));
+
+		manager = new TrackedItemManager(config, apiClient, httpClient, new Gson(), itemManager, clientThread, executor);
 
 		diagnosticListener = mock(DiagnosticListener.class);
 		listener = mock(TrackedItemManager.Listener.class);
@@ -263,14 +277,60 @@ public class TrackedItemManagerTest
 	}
 
 	@Test
-	public void fetch_networkFailure_notifiesDiagnostic()
+	public void fetch_networkFailure_retriesTwiceThenNotifiesDiagnostic()
 	{
 		respondWithFailure(new IOException("boom"));
 
 		manager.fetch();
 
+		// Initial attempt + 2 retries.
+		verify(httpClient, times(3)).newCall(any(Request.class));
 		verify(diagnosticListener).onDiagnosticEvent(anyString(), eq(false));
 		assertFalse(manager.hasTrackedItems());
+	}
+
+	@Test
+	public void fetch_networkFailure_retriesWithIncreasingBackoff()
+	{
+		respondWithFailure(new IOException("boom"));
+
+		manager.fetch();
+
+		ArgumentCaptor<Long> delayCaptor = ArgumentCaptor.forClass(Long.class);
+		verify(executor, times(2)).schedule(any(Runnable.class), delayCaptor.capture(), eq(TimeUnit.MILLISECONDS));
+		assertEquals(2000L, (long) delayCaptor.getAllValues().get(0));
+		assertEquals(4000L, (long) delayCaptor.getAllValues().get(1));
+	}
+
+	@Test
+	public void fetch_networkFailureThenSuccessOnRetry_populatesTrackedItems()
+	{
+		// Fail on the first attempt, then succeed on the retry.
+		doAnswer(invocation ->
+		{
+			Callback callback = invocation.getArgument(0);
+			callback.onFailure(call, new IOException("boom"));
+			return null;
+		}).doAnswer(invocation ->
+		{
+			Callback callback = invocation.getArgument(0);
+			Response response = new Response.Builder()
+				.request(new Request.Builder().url("https://ironkin.example.com/events/item-list").build())
+				.protocol(Protocol.HTTP_1_1)
+				.code(200)
+				.message("OK")
+				.body(ResponseBody.create(MediaType.get("application/json; charset=utf-8"),
+					"{ \"events\": [ { \"eventId\": \"bounty-123\", \"items\": [20997] } ] }"))
+				.build();
+			callback.onResponse(call, response);
+			return null;
+		}).when(call).enqueue(any(Callback.class));
+
+		manager.fetch();
+
+		verify(httpClient, times(2)).newCall(any(Request.class));
+		assertTrue(manager.hasTrackedItems());
+		verify(diagnosticListener, never()).onDiagnosticEvent(anyString(), eq(false));
 	}
 
 	@Test

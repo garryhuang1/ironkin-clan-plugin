@@ -3,6 +3,7 @@ package com.ironkinclan.manager;
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
 import com.ironkinclan.api.IronkinClanApiClient;
+import com.ironkinclan.api.RetryingCall;
 import com.ironkinclan.config.IronkinClanConfig;
 import com.ironkinclan.model.TrackedEventGroup;
 import com.ironkinclan.model.TrackedItem;
@@ -13,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
@@ -42,10 +44,11 @@ public class TrackedItemManager
 	private final Gson gson;
 	private final ItemManager itemManager;
 	private final ClientThread clientThread;
+	private final ScheduledExecutorService executor;
 
 	@Inject
 	public TrackedItemManager(IronkinClanConfig config, IronkinClanApiClient apiClient, OkHttpClient httpClient,
-		Gson gson, ItemManager itemManager, ClientThread clientThread)
+		Gson gson, ItemManager itemManager, ClientThread clientThread, ScheduledExecutorService executor)
 	{
 		this.config = config;
 		this.apiClient = apiClient;
@@ -53,6 +56,7 @@ public class TrackedItemManager
 		this.gson = gson;
 		this.itemManager = itemManager;
 		this.clientThread = clientThread;
+		this.executor = executor;
 	}
 
 	// eventId -> item IDs tracked by that event
@@ -136,7 +140,7 @@ public class TrackedItemManager
 
 		Request request = apiClient.newItemListRequest().build();
 
-		httpClient.newCall(request).enqueue(new Callback()
+		RetryingCall.enqueue(httpClient, executor, request, new Callback()
 		{
 			@Override
 			public void onFailure(Call call, IOException e)
