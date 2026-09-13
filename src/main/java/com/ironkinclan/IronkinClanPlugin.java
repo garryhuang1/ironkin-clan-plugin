@@ -4,6 +4,7 @@ import com.google.inject.Provides;
 import com.ironkinclan.config.IronkinClanConfig;
 import com.ironkinclan.manager.ClanMemberManager;
 import com.ironkinclan.manager.DropSubmissionManager;
+import com.ironkinclan.manager.EmberManager;
 import com.ironkinclan.manager.GroupComposition;
 import com.ironkinclan.manager.TrackedItemManager;
 import com.ironkinclan.model.TrackedEventGroup;
@@ -81,6 +82,9 @@ public class IronkinClanPlugin extends Plugin
 	@Inject
 	private ClanMemberManager clanMemberManager;
 
+	@Inject
+	private EmberManager emberManager;
+
 	private IronkinClanPanel panel;
 	private NavigationButton navButton;
 	private List<TrackedEventGroup> lastTrackedEvents = Collections.emptyList();
@@ -102,7 +106,7 @@ public class IronkinClanPlugin extends Plugin
 			.build();
 		clientToolbar.addNavigation(navButton);
 		panel.setLogVisible(config.showDebugLog());
-		panel.setOnActivate(trackedItemManager::refresh);
+		panel.setOnActivate(this::onPanelActivated);
 
 		overlayManager.add(eventPasswordOverlay);
 
@@ -113,6 +117,13 @@ public class IronkinClanPlugin extends Plugin
 		if (config.enableDropTracking())
 		{
 			trackedItemManager.fetch();
+		}
+
+		emberManager.setListener(this::onEmberBalanceUpdated);
+		emberManager.setDiagnosticListener(this::logDiagnostic);
+		if (client.getGameState() == GameState.LOGGED_IN)
+		{
+			emberManager.start();
 		}
 	}
 
@@ -126,6 +137,17 @@ public class IronkinClanPlugin extends Plugin
 		trackedItemManager.reset();
 		dropSubmissionManager.setListener(null);
 		lastTrackedEvents = Collections.emptyList();
+
+		emberManager.stop();
+		emberManager.setListener(null);
+		emberManager.setDiagnosticListener(null);
+		emberManager.reset();
+	}
+
+	private void onPanelActivated()
+	{
+		trackedItemManager.refresh();
+		emberManager.fetch();
 	}
 
 	private void onTrackedItemsUpdated(List<TrackedEventGroup> events)
@@ -190,6 +212,8 @@ public class IronkinClanPlugin extends Plugin
 				{
 					trackedItemManager.fetch();
 				}
+				emberManager.reset();
+				emberManager.fetch();
 				break;
 			case "enableDropTracking":
 				if (config.enableDropTracking())
@@ -213,12 +237,26 @@ public class IronkinClanPlugin extends Plugin
 	// to open the panel. Retrying on every login is a cheap, panel-independent backstop:
 	// fetch() is a no-op once the list has already loaded, so this only does real work when the
 	// initial attempt never succeeded.
+	//
+	// Ember polling is also started/stopped here: it's only meaningful while actively logged in,
+	// so it starts on login and stops once the client returns to the login screen rather than
+	// running unattended in the background.
 	@Subscribe
 	public void onGameStateChanged(GameStateChanged event)
 	{
-		if (event.getGameState() == GameState.LOGGED_IN && config.enableDropTracking())
+		GameState state = event.getGameState();
+
+		if (state == GameState.LOGGED_IN)
 		{
-			trackedItemManager.fetch();
+			if (config.enableDropTracking())
+			{
+				trackedItemManager.fetch();
+			}
+			emberManager.start();
+		}
+		else if (state == GameState.LOGIN_SCREEN)
+		{
+			emberManager.stop();
 		}
 	}
 
@@ -324,6 +362,19 @@ public class IronkinClanPlugin extends Plugin
 	private void logDiagnostic(String text, boolean success)
 	{
 		panel.addLogEntry(text, success);
+	}
+
+	// Only announce increases in chat: embers are earned, not spent through this client, so a
+	// decrease would just be a correction on the server side rather than something to celebrate.
+	private void onEmberBalanceUpdated(int balance, Integer delta)
+	{
+		panel.setEmberBalance(balance);
+
+		if (delta != null && delta > 0)
+		{
+			String message = "[Ironkin]: You have been awarded " + delta + " embers. Your total ember balance is now: " + balance + " embers.";
+			clientThread.invoke(() -> client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", message, null));
+		}
 	}
 
 	@Provides

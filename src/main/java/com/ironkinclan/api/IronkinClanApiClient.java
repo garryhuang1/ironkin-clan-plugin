@@ -28,6 +28,11 @@ public class IronkinClanApiClient
 		return authenticatedRequest(baseUrl() + "/events/item-list");
 	}
 
+	public Request.Builder newEmberBalanceRequest()
+	{
+		return authenticatedRequest(baseUrl() + "/api/embers/me");
+	}
+
 	public Request.Builder newSubmissionRequest(String eventId)
 	{
 		return authenticatedRequest(baseUrl() + "/events/" + eventId + "/submissions");

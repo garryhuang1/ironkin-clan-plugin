@@ -15,6 +15,7 @@ import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.text.NumberFormat;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -53,7 +54,10 @@ public class IronkinClanPanel extends PluginPanel
 	private final JPanel topSection = new JPanel(new BorderLayout());
 	private final JPanel logPanel = new JPanel();
 	private final JPanel logSection = new JPanel(new BorderLayout());
+	private final JPanel embersSection = new JPanel(new BorderLayout());
+	private final JLabel embersBalanceLabel = new JLabel("No data yet");
 	private final JLabel trackedItemsPlaceholder = new JLabel("No items loaded yet");
+	private final GridBagConstraints embersSectionConstraints = new GridBagConstraints();
 	private final GridBagConstraints topSectionConstraints = new GridBagConstraints();
 	private final GridBagConstraints logSectionConstraints = new GridBagConstraints();
 	private final List<String> logEntries = new ArrayList<>();
@@ -72,6 +76,14 @@ public class IronkinClanPanel extends PluginPanel
 		setLayout(new GridBagLayout());
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
 		setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+
+		embersSection.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		embersSection.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
+		embersSection.add(sectionHeader("Embers"), BorderLayout.NORTH);
+
+		embersBalanceLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		embersBalanceLabel.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
+		embersSection.add(embersBalanceLabel, BorderLayout.CENTER);
 
 		topSection.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		topSection.add(sectionHeader("Tracked Items"), BorderLayout.NORTH);
@@ -111,16 +123,23 @@ public class IronkinClanPanel extends PluginPanel
 		logSection.add(sectionHeader("Log", exportLogButton), BorderLayout.NORTH);
 		logSection.add(logScroll, BorderLayout.CENTER);
 
+		embersSectionConstraints.gridx = 0;
+		embersSectionConstraints.gridy = 0;
+		embersSectionConstraints.weightx = 1;
+		embersSectionConstraints.weighty = 0;
+		embersSectionConstraints.fill = GridBagConstraints.HORIZONTAL;
+
 		topSectionConstraints.gridx = 0;
-		topSectionConstraints.gridy = 0;
+		topSectionConstraints.gridy = 1;
 		topSectionConstraints.weightx = 1;
 		topSectionConstraints.fill = GridBagConstraints.BOTH;
 
 		logSectionConstraints.gridx = 0;
-		logSectionConstraints.gridy = 1;
+		logSectionConstraints.gridy = 2;
 		logSectionConstraints.weightx = 1;
 		logSectionConstraints.fill = GridBagConstraints.BOTH;
 
+		add(embersSection, embersSectionConstraints);
 		add(topSection, topSectionConstraints);
 		add(logSection, logSectionConstraints);
 
@@ -182,6 +201,11 @@ public class IronkinClanPanel extends PluginPanel
 			wrapper.add(trailing, BorderLayout.EAST);
 		}
 		return wrapper;
+	}
+
+	public void setEmberBalance(int balance)
+	{
+		SwingUtilities.invokeLater(() -> embersBalanceLabel.setText(NumberFormat.getIntegerInstance().format(balance) + " embers"));
 	}
 
 	public void setTrackedItems(List<TrackedEventGroup> events)
