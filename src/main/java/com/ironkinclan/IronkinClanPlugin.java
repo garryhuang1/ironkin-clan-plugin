@@ -3,10 +3,14 @@ package com.ironkinclan;
 import com.google.inject.Provides;
 import com.ironkinclan.config.IronkinClanConfig;
 import com.ironkinclan.manager.ClanMemberManager;
+import com.ironkinclan.manager.CurrentBossTracker;
 import com.ironkinclan.manager.DropSubmissionManager;
 import com.ironkinclan.manager.EmberManager;
 import com.ironkinclan.manager.GroupComposition;
+import com.ironkinclan.manager.PersonalBestManager;
+import com.ironkinclan.manager.PersonalBestMessageParser;
 import com.ironkinclan.manager.TrackedItemManager;
+import com.ironkinclan.model.BossActivity;
 import com.ironkinclan.model.TrackedEventGroup;
 import com.ironkinclan.ui.EventPasswordOverlay;
 import com.ironkinclan.ui.IronkinClanPanel;
@@ -21,7 +25,9 @@ import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.InteractingChanged;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.game.ItemManager;
@@ -33,6 +39,7 @@ import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.util.ImageUtil;
+import net.runelite.client.util.Text;
 import net.runelite.http.api.loottracker.LootRecordType;
 
 @Slf4j
@@ -85,6 +92,12 @@ public class IronkinClanPlugin extends Plugin
 	@Inject
 	private EmberManager emberManager;
 
+	@Inject
+	private CurrentBossTracker currentBossTracker;
+
+	@Inject
+	private PersonalBestManager personalBestManager;
+
 	private IronkinClanPanel panel;
 	private NavigationButton navButton;
 	private List<TrackedEventGroup> lastTrackedEvents = Collections.emptyList();
@@ -125,6 +138,8 @@ public class IronkinClanPlugin extends Plugin
 		{
 			emberManager.start();
 		}
+
+		personalBestManager.setListener(this::logUploadEvent);
 	}
 
 	@Override
@@ -142,6 +157,9 @@ public class IronkinClanPlugin extends Plugin
 		emberManager.setListener(null);
 		emberManager.setDiagnosticListener(null);
 		emberManager.reset();
+
+		personalBestManager.setListener(null);
+		currentBossTracker.reset();
 	}
 
 	private void onPanelActivated()
@@ -260,6 +278,91 @@ public class IronkinClanPlugin extends Plugin
 		}
 	}
 
+	// Tracks which boss the local player is currently fighting, so a subsequent "new personal
+	// best" chat message (which rarely names the boss itself) can be attributed correctly.
+	// Checked first to avoid any NPC-name lookups while the feature is disabled.
+	@Subscribe
+	public void onInteractingChanged(InteractingChanged event)
+	{
+		if (!config.enablePersonalBestTracking() || client.getLocalPlayer() == null)
+		{
+			return;
+		}
+
+		currentBossTracker.onInteractingChanged(client.getLocalPlayer(), event.getSource(), event.getTarget());
+	}
+
+	// RuneScape announces a new personal best via a game message rather than any readable
+	// server-side state, so this is the only client-side signal available. If the message
+	// doesn't match a tracked boss (see CurrentBossTracker), it's silently skipped rather
+	// than submitting a guessed boss name the Hall of Flame site won't recognize.
+	// Wrapped in a try/catch (unlike the other subscribers in this class) because this is one of
+	// the two handlers that submits content to the Ironkin server - an unexpected exception here
+	// shouldn't silently drop a personal best with no trace of what happened.
+	@Subscribe
+	public void onChatMessage(ChatMessage event)
+	{
+		try
+		{
+			handleChatMessage(event);
+		}
+		catch (Exception e)
+		{
+			logDiagnostic("Unexpected error while processing a new personal best message: " + e, false);
+		}
+	}
+
+	private void handleChatMessage(ChatMessage event)
+	{
+		if (!config.enablePersonalBestTracking() || event.getType() != ChatMessageType.GAMEMESSAGE)
+		{
+			return;
+		}
+
+		String time = PersonalBestMessageParser.parseTime(event.getMessage());
+		if (time == null)
+		{
+			return;
+		}
+
+		BossActivity boss = currentBossTracker.getCurrentBoss();
+		if (boss == null)
+		{
+			// This fires for plenty of content outside the Hall of Flame list too (raids, Nex,
+			// Barrows, Wintertodt, etc.), so it's a diagnostic rather than a chat-echoed failure -
+			// surfaced in the panel log (when enabled) so a user can tell why a PB didn't submit.
+			// Tags are stripped so the panel shows clean text rather than raw <col=...> markup.
+			logDiagnostic("Detected a new personal best (" + time + ") but couldn't identify the boss - not submitting: "
+				+ Text.removeTags(event.getMessage()), false);
+			return;
+		}
+
+		String requiredPhrase = boss.requiredMessagePhrase();
+		if (requiredPhrase != null && !Text.removeTags(event.getMessage()).toLowerCase().contains(requiredPhrase))
+		{
+			// e.g. Doom of Mokhaiotl also reports a PB per individual delve level in the same
+			// chat stream - only the message matching the required phrase is the one that
+			// corresponds to this Hall of Flame category (see BossActivity.requiredMessagePhrase).
+			logDiagnostic("Detected a new personal best (" + time + ") for " + boss.hallOfFlameName
+				+ " but it wasn't the qualifying completion message (likely a sub-metric PB) - not submitting", false);
+			return;
+		}
+
+		if (client.getLocalPlayer() == null)
+		{
+			logDiagnostic("Detected a new personal best for " + boss.hallOfFlameName
+				+ " but the local player wasn't available - not submitting", false);
+			return;
+		}
+
+		String username = client.getLocalPlayer().getName();
+		// Logged before the screenshot is even captured (rather than only on eventual success/
+		// failure) so a submission that never completes - e.g. the DrawManager callback never
+		// firing - still leaves a trace of what was detected.
+		logDiagnostic("Detected new personal best for " + boss.hallOfFlameName + " (" + time + ") - capturing screenshot", true);
+		personalBestManager.reportPersonalBest(username, boss.hallOfFlameName, time);
+	}
+
 	// Uses the built-in Loot Tracker plugin's LootReceived broadcast rather than NpcLootReceived,
 	// since Loot Tracker already funnels NPC kills, clue scroll rewards, raid/Barrows chests, and
 	// most minigame rewards through one addLoot() call that posts this event. This only fires if
@@ -268,8 +371,23 @@ public class IronkinClanPlugin extends Plugin
 	// PLAYER-type loot (PvP kills) is deliberately excluded and shouldn't be added: it would
 	// report another player's gear to a third-party server, which is explicitly called out as a
 	// rejected plugin behavior ("crowdsourcing data about other players... gear...").
+	// Wrapped in a try/catch (unlike the other subscribers in this class) because this is one of
+	// the two handlers that submits content to the Ironkin server - an unexpected exception here
+	// shouldn't silently drop a loot report with no trace of what happened.
 	@Subscribe
 	public void onLootReceived(LootReceived event)
+	{
+		try
+		{
+			handleLootReceived(event);
+		}
+		catch (Exception e)
+		{
+			logDiagnostic("Unexpected error while processing loot from " + event.getName() + ": " + e, false);
+		}
+	}
+
+	private void handleLootReceived(LootReceived event)
 	{
 		if (!config.enableDropTracking())
 		{
@@ -330,9 +448,9 @@ public class IronkinClanPlugin extends Plugin
 						groupComposition = clanMemberManager.getNearbyGroupComposition();
 					}
 
-					if (!groupComposition.isClanMajority())
+					if (!groupComposition.hasClanBackup())
 					{
-						logDiagnostic("Skipping " + itemName + " for " + eventId + ": clan was not a majority of the group ("
+						logDiagnostic("Skipping " + itemName + " for " + eventId + ": no other clan member was nearby ("
 							+ groupComposition.clanPlayers + "/" + groupComposition.totalPlayers + ")", false);
 						continue;
 					}

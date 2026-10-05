@@ -59,4 +59,15 @@ public interface IronkinClanConfig extends Config
 	{
 		return false;
 	}
+
+	@ConfigItem(
+		keyName = "enablePersonalBestTracking",
+		name = "Enable personal best tracking",
+		description = "Screenshots new personal bests at supported bosses and submits them to the Ironkin Hall of Flame",
+		warning = "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers"
+	)
+	default boolean enablePersonalBestTracking()
+	{
+		return false;
+	}
 }

@@ -13,6 +13,7 @@ import okhttp3.Request;
 public class IronkinClanApiClient
 {
 	public static final String API_KEY_HEADER = "x-api-key";
+	public static final String PLUGIN_KEY_HEADER = "X-Ironkin-Plugin-Key";
 	public static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
 	private final IronkinClanConfig config;
@@ -36,6 +37,15 @@ public class IronkinClanApiClient
 	public Request.Builder newSubmissionRequest(String eventId)
 	{
 		return authenticatedRequest(baseUrl() + "/events/" + eventId + "/submissions");
+	}
+
+	// Separate from authenticatedRequest(): the Hall of Flame plugin-submit endpoint
+	// authenticates with a differently-named header than the rest of the Ironkin events API.
+	public Request.Builder newPersonalBestRequest()
+	{
+		return new Request.Builder()
+			.url(baseUrl() + "/api/hall-of-flame/plugin-submit")
+			.header(PLUGIN_KEY_HEADER, config.apiKey());
 	}
 
 	private Request.Builder authenticatedRequest(String url)

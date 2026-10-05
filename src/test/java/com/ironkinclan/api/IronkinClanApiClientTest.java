@@ -43,6 +43,15 @@ public class IronkinClanApiClientTest
 	}
 
 	@Test
+	public void newPersonalBestRequest_buildsExpectedUrlAndPluginKeyHeader()
+	{
+		Request request = apiClient.newPersonalBestRequest().build();
+
+		assertEquals("https://ironkin.example.com/api/hall-of-flame/plugin-submit", request.url().toString());
+		assertEquals("secret-key", request.header(IronkinClanApiClient.PLUGIN_KEY_HEADER));
+	}
+
+	@Test
 	public void baseUrl_stripsTrailingSlashFromServerUrl()
 	{
 		when(config.serverUrl()).thenReturn("https://ironkin.example.com/");

@@ -20,10 +20,10 @@ public class GroupComposition
 		this.clanMembers = clanMembers;
 	}
 
-	// A strict majority (more than half) of the group must be in the clan. Solo kills never
-	// qualify, even though a lone clan member would otherwise be a 100% majority of 1.
-	public boolean isClanMajority()
+	// At least one other clan member must be nearby. Solo kills never qualify - clanPlayers must
+	// include the local player plus at least one more.
+	public boolean hasClanBackup()
 	{
-		return totalPlayers > 1 && clanPlayers * 2 > totalPlayers;
+		return clanPlayers > 1;
 	}
 }

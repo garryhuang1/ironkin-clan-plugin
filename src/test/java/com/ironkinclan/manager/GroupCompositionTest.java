@@ -14,33 +14,23 @@ public class GroupCompositionTest
 	}
 
 	@Test
-	public void isClanMajority_strictMajorityRatios_eligible()
+	public void hasClanBackup_atLeastOneOtherClanMember_eligible()
 	{
-		assertTrue(of(2, 2).isClanMajority());
-		assertTrue(of(2, 3).isClanMajority());
-		assertTrue(of(3, 4).isClanMajority());
-		assertTrue(of(3, 5).isClanMajority());
-		assertTrue(of(4, 6).isClanMajority());
-		assertTrue(of(4, 7).isClanMajority());
+		assertTrue(of(2, 2).hasClanBackup());
+		assertTrue(of(2, 3).hasClanBackup());
+		assertTrue(of(2, 7).hasClanBackup());
+		assertTrue(of(4, 7).hasClanBackup());
 	}
 
 	@Test
-	public void isClanMajority_soloKill_notEligibleEvenThoughFullMajority()
+	public void hasClanBackup_soloKill_notEligible()
 	{
-		assertFalse(of(1, 1).isClanMajority());
+		assertFalse(of(1, 1).hasClanBackup());
 	}
 
 	@Test
-	public void isClanMajority_exactlyHalf_notEligible()
+	public void hasClanBackup_noClanPlayersNearby_notEligible()
 	{
-		assertFalse(of(3, 6).isClanMajority());
-		assertFalse(of(2, 4).isClanMajority());
-	}
-
-	@Test
-	public void isClanMajority_minorityClan_notEligible()
-	{
-		assertFalse(of(1, 3).isClanMajority());
-		assertFalse(of(0, 2).isClanMajority());
+		assertFalse(of(0, 2).hasClanBackup());
 	}
 }
