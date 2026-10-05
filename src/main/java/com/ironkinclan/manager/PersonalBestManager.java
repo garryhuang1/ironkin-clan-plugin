@@ -1,6 +1,7 @@
 package com.ironkinclan.manager;
 
 import com.ironkinclan.api.IronkinClanApiClient;
+import com.ironkinclan.api.ResponsePreview;
 import com.ironkinclan.api.RetryingCall;
 import java.awt.Image;
 import java.awt.image.BufferedImage;
@@ -43,10 +44,18 @@ public class PersonalBestManager
 	}
 
 	private DiagnosticListener listener;
+	private DiagnosticListener diagnosticListener;
 
 	public void setListener(DiagnosticListener listener)
 	{
 		this.listener = listener;
+	}
+
+	// Separate from listener: receives background detail (retries) that belongs in the panel log
+	// only, whereas listener carries the submission results that are also echoed to chat.
+	public void setDiagnosticListener(DiagnosticListener diagnosticListener)
+	{
+		this.diagnosticListener = diagnosticListener;
 	}
 
 	public void reportPersonalBest(String username, String bossName, String time)
@@ -80,16 +89,22 @@ public class PersonalBestManager
 			.addFormDataPart("proof", "personal-best.png", RequestBody.create(PNG, pngBytes))
 			.build();
 
+		// What gets written to the panel log if the upload fails: the form fields, with the
+		// screenshot replaced by its size, since the image bytes would swamp an exported log.
+		String loggedBody = "player=" + username + ", boss=" + bossName + ", time=" + time
+			+ ", proof=[PNG, " + pngBytes.length + " bytes]";
+
 		Request request = apiClient.newPersonalBestRequest()
 			.post(body)
 			.build();
 
-		RetryingCall.enqueue(httpClient, executor, request, new Callback()
+		RetryingCall.enqueue(httpClient, executor, request, message -> notifyDiagnostic(message, false), new Callback()
 		{
 			@Override
 			public void onFailure(Call call, IOException e)
 			{
 				notifyListener("Failed to send " + bossName + " personal best (" + time + "): " + e.getMessage(), false);
+				notifyFailedRequest(request, loggedBody);
 			}
 
 			@Override
@@ -100,6 +115,8 @@ public class PersonalBestManager
 					if (!r.isSuccessful())
 					{
 						notifyListener("Failed to send " + bossName + " personal best (HTTP " + r.code() + ")", false);
+						notifyFailedRequest(request, loggedBody);
+						notifyDiagnostic("Server response (HTTP " + r.code() + "): " + ResponsePreview.of(r), false);
 					}
 					else
 					{
@@ -115,6 +132,20 @@ public class PersonalBestManager
 		if (listener != null)
 		{
 			listener.onDiagnosticEvent(text, success);
+		}
+	}
+
+	// Deliberately logs the method, URL and body only - never the headers, which carry the API key.
+	private void notifyFailedRequest(Request request, String loggedBody)
+	{
+		notifyDiagnostic("Failed request was " + request.method() + " " + request.url() + " with body: " + loggedBody, false);
+	}
+
+	private void notifyDiagnostic(String text, boolean success)
+	{
+		if (diagnosticListener != null)
+		{
+			diagnosticListener.onDiagnosticEvent(text, success);
 		}
 	}
 }

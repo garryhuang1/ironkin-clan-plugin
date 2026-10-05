@@ -6,11 +6,12 @@ import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Dimension;
-import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
+import java.awt.GridLayout;
 import java.awt.Insets;
+import java.awt.Rectangle;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.MouseAdapter;
@@ -32,6 +33,7 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.ScrollPaneConstants;
+import javax.swing.Scrollable;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
@@ -45,12 +47,13 @@ public class IronkinClanPanel extends PluginPanel
 	private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault());
 	private static final int MAX_LOG_ENTRIES = 50;
 	private static final int ICON_SLOT_SIZE = 36;
+	private static final int ITEMS_PER_ROW = 5;
 	private static final double TRACKED_ITEMS_WEIGHT_WITH_LOG = 0.7;
 	private static final double LOG_WEIGHT_WITH_LOG = 0.3;
 
 	private final ItemManager itemManager;
 
-	private final JPanel trackedItemsContainer = new JPanel();
+	private final JPanel trackedItemsContainer = new ViewportWidthPanel();
 	private final JPanel topSection = new JPanel(new BorderLayout());
 	private final JPanel logPanel = new JPanel();
 	private final JPanel logSection = new JPanel(new BorderLayout());
@@ -249,7 +252,7 @@ public class IronkinClanPanel extends PluginPanel
 		section.setAlignmentX(Component.LEFT_ALIGNMENT);
 		section.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0));
 
-		JPanel itemsPanel = new WrappingFlowPanel(FlowLayout.LEFT, 4, 4, trackedItemsContainer);
+		JPanel itemsPanel = new JPanel(new GridLayout(0, ITEMS_PER_ROW, 4, 4));
 		itemsPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		itemsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 		itemsPanel.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
@@ -268,7 +271,8 @@ public class IronkinClanPanel extends PluginPanel
 		headerBar.setAlignmentX(Component.LEFT_ALIGNMENT);
 		headerBar.setMaximumSize(new Dimension(Integer.MAX_VALUE, 24));
 		headerBar.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		headerBar.add(headerLabel, BorderLayout.WEST);
+		headerBar.setToolTipText(event.eventId);
+		headerBar.add(headerLabel, BorderLayout.CENTER);
 		headerBar.addMouseListener(new MouseAdapter()
 		{
 			@Override
@@ -364,72 +368,41 @@ public class IronkinClanPanel extends PluginPanel
 	}
 
 	/**
-	 * FlowLayout's preferredLayoutSize() ignores wrapping (it reports the width/height needed
-	 * for a single row), so a FlowLayout panel nested in a BoxLayout parent never grows tall
-	 * enough to show wrapped rows. This recomputes the preferred height for the panel's actual
-	 * current width so multi-row content isn't clipped.
-	 *
-	 * Width is measured off an explicitly-supplied reference component (the scrollable
-	 * BoxLayout container that ultimately hosts these panels), rather than any ancestor looked up
-	 * dynamically. This panel sits nested inside a per-event section (a BorderLayout cell), whose
-	 * own size depends on asking this panel for its preferred size - measuring against that parent,
-	 * or against an ancestor found by walking up at layout time, produced circular/stale readings
-	 * (the true width isn't settled yet at that point), which was inflating the reserved height for
-	 * every event section. The reference container's width is set independently by its own parent
-	 * viewport, so it's already reliable by the time this is asked to compute a height for it.
+	 * A plain JPanel inside a JScrollPane is sized to its preferred width whenever that is wider
+	 * than the viewport, and with the horizontal scrollbar disabled the overflow is simply cut
+	 * off. One long event ID in a section header was enough to widen every section that way.
+	 * Tracking the viewport width pins the content to the visible area instead.
 	 */
-	private static class WrappingFlowPanel extends JPanel
+	private static class ViewportWidthPanel extends JPanel implements Scrollable
 	{
-		private final Component widthReference;
-
-		WrappingFlowPanel(int align, int hgap, int vgap, Component widthReference)
+		@Override
+		public Dimension getPreferredScrollableViewportSize()
 		{
-			super(new FlowLayout(align, hgap, vgap));
-			this.widthReference = widthReference;
+			return getPreferredSize();
 		}
 
 		@Override
-		public Dimension getPreferredSize()
+		public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction)
 		{
-			int width = widthReference.getWidth() > 0 ? widthReference.getWidth() : PANEL_WIDTH;
+			return 16;
+		}
 
-			FlowLayout layout = (FlowLayout) getLayout();
-			int hgap = layout.getHgap();
-			int vgap = layout.getVgap();
-			Insets insets = getInsets();
-			int availableWidth = width - insets.left - insets.right;
+		@Override
+		public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction)
+		{
+			return visibleRect.height;
+		}
 
-			int rowWidth = 0;
-			int rowHeight = 0;
-			int totalHeight = 0;
-			int rows = 0;
+		@Override
+		public boolean getScrollableTracksViewportWidth()
+		{
+			return true;
+		}
 
-			for (Component c : getComponents())
-			{
-				if (!c.isVisible())
-				{
-					continue;
-				}
-
-				Dimension d = c.getPreferredSize();
-				if (rowWidth > 0 && rowWidth + hgap + d.width > availableWidth)
-				{
-					totalHeight += rowHeight + vgap;
-					rowWidth = 0;
-					rowHeight = 0;
-				}
-
-				rowWidth += (rowWidth > 0 ? hgap : 0) + d.width;
-				rowHeight = Math.max(rowHeight, d.height);
-				rows++;
-			}
-
-			if (rows > 0)
-			{
-				totalHeight += rowHeight;
-			}
-
-			return new Dimension(width, totalHeight + insets.top + insets.bottom + vgap * 2);
+		@Override
+		public boolean getScrollableTracksViewportHeight()
+		{
+			return false;
 		}
 	}
 }

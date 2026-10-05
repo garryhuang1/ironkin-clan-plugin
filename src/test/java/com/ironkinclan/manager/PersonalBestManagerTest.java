@@ -161,6 +161,25 @@ public class PersonalBestManagerTest
 	}
 
 	@Test
+	public void uploadPersonalBest_httpError_logsRequestFieldsWithoutScreenshotOrApiKey()
+	{
+		DiagnosticListener diagnosticListener = mock(DiagnosticListener.class);
+		manager.setDiagnosticListener(diagnosticListener);
+		respondWith(500);
+
+		manager.uploadPersonalBest("PlayerName", "Vardorvis", "1:23.40", testImage());
+
+		ArgumentCaptor<String> textCaptor = ArgumentCaptor.forClass(String.class);
+		verify(diagnosticListener, times(2)).onDiagnosticEvent(textCaptor.capture(), eq(false));
+		String text = textCaptor.getAllValues().get(0);
+		assertEquals("Server response (HTTP 500): (empty)", textCaptor.getAllValues().get(1));
+
+		assertTrue(text.startsWith("Failed request was POST " + SUBMIT_URL + " with body: "));
+		assertTrue(text.contains("player=PlayerName, boss=Vardorvis, time=1:23.40, proof=[PNG, "));
+		assertTrue(!text.contains("secret-key"));
+	}
+
+	@Test
 	public void uploadPersonalBest_networkFailure_retriesTwiceThenNotifiesListenerFalse()
 	{
 		respondWithFailure(new IOException("connection refused"));

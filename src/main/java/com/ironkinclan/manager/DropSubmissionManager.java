@@ -3,6 +3,7 @@ package com.ironkinclan.manager;
 import com.google.gson.Gson;
 import com.google.gson.annotations.SerializedName;
 import com.ironkinclan.api.IronkinClanApiClient;
+import com.ironkinclan.api.ResponsePreview;
 import com.ironkinclan.api.RetryingCall;
 import java.awt.Image;
 import java.awt.image.BufferedImage;
@@ -48,10 +49,18 @@ public class DropSubmissionManager
 	}
 
 	private DiagnosticListener listener;
+	private DiagnosticListener diagnosticListener;
 
 	public void setListener(DiagnosticListener listener)
 	{
 		this.listener = listener;
+	}
+
+	// Separate from listener: receives background detail (encoding, retries) that belongs in the
+	// panel log only, whereas listener carries the submission results that are also echoed to chat.
+	public void setDiagnosticListener(DiagnosticListener diagnosticListener)
+	{
+		this.diagnosticListener = diagnosticListener;
 	}
 
 	public void reportDrop(String eventId, String username, int itemId, String itemName)
@@ -86,23 +95,28 @@ public class DropSubmissionManager
 			return;
 		}
 
-		log.debug("Encoded {} drop screenshot for {}: {} base64 chars", itemName, username, imageData.length());
+		notifyDiagnostic("Encoded " + itemName + " drop screenshot for " + username + ": " + imageData.length() + " base64 chars", true);
 		notifyListener("Captured screenshot for " + itemName + " drop", true);
 
 		DropReport report = new DropReport(username, itemId, timestamp, imageData, participants);
 		RequestBody body = RequestBody.create(IronkinClanApiClient.JSON, gson.toJson(report));
+		// What gets written to the panel log if the upload fails: the same body, but with the
+		// screenshot replaced by its size, since the base64 payload would swamp an exported log.
+		String loggedBody = gson.toJson(new DropReport(username, itemId, timestamp,
+			"[base64 PNG, " + imageData.length() + " chars]", participants));
 
 		Request request = apiClient.newSubmissionRequest(eventId)
 			.post(body)
 			.build();
 
-		RetryingCall.enqueue(httpClient, executor, request, new Callback()
+		RetryingCall.enqueue(httpClient, executor, request, message -> notifyDiagnostic(message, false), new Callback()
 		{
 			@Override
 			public void onFailure(Call call, IOException e)
 			{
 				log.warn("Failed to upload Ironkin drop report for item {} to event {}", itemId, eventId, e);
 				notifyListener("Failed to send " + itemName + " drop to " + eventId + ": " + e.getMessage(), false);
+				notifyFailedRequest(request, loggedBody);
 			}
 
 			@Override
@@ -114,6 +128,8 @@ public class DropSubmissionManager
 					{
 						log.warn("Ironkin drop report upload failed for item {} to event {}: HTTP {}", itemId, eventId, r.code());
 						notifyListener("Failed to send " + itemName + " drop to " + eventId + " (HTTP " + r.code() + ")", false);
+						notifyFailedRequest(request, loggedBody);
+						notifyDiagnostic("Server response (HTTP " + r.code() + "): " + ResponsePreview.of(r), false);
 					}
 					else
 					{
@@ -129,6 +145,20 @@ public class DropSubmissionManager
 		if (listener != null)
 		{
 			listener.onDiagnosticEvent(text, success);
+		}
+	}
+
+	// Deliberately logs the method, URL and body only - never the headers, which carry the API key.
+	private void notifyFailedRequest(Request request, String loggedBody)
+	{
+		notifyDiagnostic("Failed request was " + request.method() + " " + request.url() + " with body: " + loggedBody, false);
+	}
+
+	private void notifyDiagnostic(String text, boolean success)
+	{
+		if (diagnosticListener != null)
+		{
+			diagnosticListener.onDiagnosticEvent(text, success);
 		}
 	}
 

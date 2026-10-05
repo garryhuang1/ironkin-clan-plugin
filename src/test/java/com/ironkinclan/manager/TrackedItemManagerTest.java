@@ -31,7 +31,9 @@ import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -285,7 +287,9 @@ public class TrackedItemManagerTest
 
 		// Initial attempt + 2 retries.
 		verify(httpClient, times(3)).newCall(any(Request.class));
-		verify(diagnosticListener).onDiagnosticEvent(anyString(), eq(false));
+		// One notice per retry, then the single terminal failure.
+		verify(diagnosticListener, times(2)).onDiagnosticEvent(contains("retrying in"), eq(false));
+		verify(diagnosticListener).onDiagnosticEvent(startsWith("Failed to fetch"), eq(false));
 		assertFalse(manager.hasTrackedItems());
 	}
 
@@ -330,7 +334,10 @@ public class TrackedItemManagerTest
 
 		verify(httpClient, times(2)).newCall(any(Request.class));
 		assertTrue(manager.hasTrackedItems());
-		verify(diagnosticListener, never()).onDiagnosticEvent(anyString(), eq(false));
+		// The failed first attempt is surfaced as a retry notice, but a recovered fetch must not
+		// also report the terminal "Failed to fetch" warning.
+		verify(diagnosticListener).onDiagnosticEvent(contains("retrying in 2000ms (attempt 1/2)"), eq(false));
+		verify(diagnosticListener, never()).onDiagnosticEvent(startsWith("Failed to fetch"), eq(false));
 	}
 
 	@Test

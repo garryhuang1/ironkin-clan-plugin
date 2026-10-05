@@ -173,6 +173,30 @@ public class DropSubmissionManagerTest
 	}
 
 	@Test
+	public void uploadDrop_httpError_logsRequestBodyWithoutScreenshotOrApiKey()
+	{
+		DiagnosticListener diagnosticListener = mock(DiagnosticListener.class);
+		manager.setDiagnosticListener(diagnosticListener);
+		respondWith(500);
+
+		manager.uploadDrop("bounty-123", "PlayerName", 20997, "Twisted bow", 1720280000000L,
+			Arrays.asList("Clanmate1", "Clanmate2"), testImage());
+
+		ArgumentCaptor<String> textCaptor = ArgumentCaptor.forClass(String.class);
+		verify(diagnosticListener, times(2)).onDiagnosticEvent(textCaptor.capture(), eq(false));
+		String text = textCaptor.getAllValues().get(0);
+		assertEquals("Server response (HTTP 500): (empty)", textCaptor.getAllValues().get(1));
+
+		assertTrue(text.startsWith("Failed request was POST https://ironkin.example.com/events/bounty-123/submissions with body: "));
+		assertTrue(text.contains("\"username\":\"PlayerName\""));
+		assertTrue(text.contains("\"itemid\":20997"));
+		assertTrue(text.contains("\"timestamp\":1720280000000"));
+		assertTrue(text.contains("\"participants\":[\"Clanmate1\",\"Clanmate2\"]"));
+		assertTrue(text.contains("\"imageData\":\"[base64 PNG, "));
+		assertTrue(!text.contains("secret-key"));
+	}
+
+	@Test
 	public void uploadDrop_networkFailure_retriesTwiceThenNotifiesListenerFalse()
 	{
 		respondWithFailure(new IOException("connection refused"));

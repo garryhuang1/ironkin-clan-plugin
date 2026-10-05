@@ -3,7 +3,7 @@ package com.ironkinclan.api;
 import java.io.IOException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import lombok.extern.slf4j.Slf4j;
+import java.util.function.Consumer;
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.OkHttpClient;
@@ -17,7 +17,6 @@ import okhttp3.Response;
  * server received and processed the request, so an immediate retry is unlikely to help,
  * and callers already treat those as terminal failures.
  */
-@Slf4j
 public final class RetryingCall
 {
 	private static final int MAX_RETRIES = 2;
@@ -27,12 +26,16 @@ public final class RetryingCall
 	{
 	}
 
-	public static void enqueue(OkHttpClient httpClient, ScheduledExecutorService executor, Request request, Callback callback)
+	// onRetry receives a human-readable notice each time a failed attempt is about to be retried,
+	// so callers can surface it in the panel log - the final failure still goes to the callback.
+	public static void enqueue(OkHttpClient httpClient, ScheduledExecutorService executor, Request request,
+		Consumer<String> onRetry, Callback callback)
 	{
-		attempt(httpClient, executor, request, callback, 0);
+		attempt(httpClient, executor, request, onRetry, callback, 0);
 	}
 
-	private static void attempt(OkHttpClient httpClient, ScheduledExecutorService executor, Request request, Callback callback, int retryCount)
+	private static void attempt(OkHttpClient httpClient, ScheduledExecutorService executor, Request request,
+		Consumer<String> onRetry, Callback callback, int retryCount)
 	{
 		httpClient.newCall(request).enqueue(new Callback()
 		{
@@ -46,9 +49,9 @@ public final class RetryingCall
 				}
 
 				long delayMs = INITIAL_BACKOFF_MS << retryCount;
-				log.debug("Request to {} failed ({}); retrying in {}ms (attempt {}/{})",
-					request.url(), e.getMessage(), delayMs, retryCount + 1, MAX_RETRIES);
-				executor.schedule(() -> attempt(httpClient, executor, request, callback, retryCount + 1),
+				onRetry.accept("Request to " + request.url() + " failed (" + e.getMessage() + "); retrying in "
+					+ delayMs + "ms (attempt " + (retryCount + 1) + "/" + MAX_RETRIES + ")");
+				executor.schedule(() -> attempt(httpClient, executor, request, onRetry, callback, retryCount + 1),
 					delayMs, TimeUnit.MILLISECONDS);
 			}
 

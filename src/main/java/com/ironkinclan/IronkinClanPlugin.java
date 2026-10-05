@@ -19,7 +19,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import javax.inject.Inject;
-import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
@@ -42,7 +41,6 @@ import net.runelite.client.util.ImageUtil;
 import net.runelite.client.util.Text;
 import net.runelite.http.api.loottracker.LootRecordType;
 
-@Slf4j
 @PluginDescriptor(
 	name = "Ironkin Clan"
 )
@@ -126,6 +124,7 @@ public class IronkinClanPlugin extends Plugin
 		trackedItemManager.setListener(this::onTrackedItemsUpdated);
 		trackedItemManager.setDiagnosticListener(this::logDiagnostic);
 		dropSubmissionManager.setListener(this::logUploadEvent);
+		dropSubmissionManager.setDiagnosticListener(this::logDiagnostic);
 
 		if (config.enableDropTracking())
 		{
@@ -140,6 +139,7 @@ public class IronkinClanPlugin extends Plugin
 		}
 
 		personalBestManager.setListener(this::logUploadEvent);
+		personalBestManager.setDiagnosticListener(this::logDiagnostic);
 	}
 
 	@Override
@@ -151,6 +151,7 @@ public class IronkinClanPlugin extends Plugin
 		trackedItemManager.setDiagnosticListener(null);
 		trackedItemManager.reset();
 		dropSubmissionManager.setListener(null);
+		dropSubmissionManager.setDiagnosticListener(null);
 		lastTrackedEvents = Collections.emptyList();
 
 		emberManager.stop();
@@ -159,6 +160,7 @@ public class IronkinClanPlugin extends Plugin
 		emberManager.reset();
 
 		personalBestManager.setListener(null);
+		personalBestManager.setDiagnosticListener(null);
 		currentBossTracker.reset();
 	}
 
@@ -413,7 +415,8 @@ public class IronkinClanPlugin extends Plugin
 		}
 
 		String username = client.getLocalPlayer().getName();
-		log.debug("Processing loot event from {} ({}): {} item stack(s)", event.getName(), event.getType(), event.getItems().size());
+		logDiagnostic("Processing loot event from " + event.getName() + " (" + event.getType() + "): "
+			+ event.getItems().size() + " item stack(s)", true);
 
 		// The nearby group is only relevant to the group boss event, so this is looked up at most
 		// once per loot event rather than unconditionally on every drop.
@@ -436,7 +439,8 @@ public class IronkinClanPlugin extends Plugin
 				continue;
 			}
 
-			log.debug("Matched tracked item {} ({}) x{} - reporting to event(s) {}", item.getId(), itemName, item.getQuantity(), eventIds);
+			logDiagnostic("Matched tracked item " + itemName + " (" + item.getId() + ") x" + item.getQuantity()
+				+ " - reporting to event(s) " + eventIds, true);
 
 			for (String eventId : eventIds)
 			{

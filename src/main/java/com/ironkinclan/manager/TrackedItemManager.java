@@ -3,6 +3,7 @@ package com.ironkinclan.manager;
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
 import com.ironkinclan.api.IronkinClanApiClient;
+import com.ironkinclan.api.ResponsePreview;
 import com.ironkinclan.api.RetryingCall;
 import com.ironkinclan.config.IronkinClanConfig;
 import com.ironkinclan.model.TrackedEventGroup;
@@ -140,7 +141,7 @@ public class TrackedItemManager
 
 		Request request = apiClient.newItemListRequest().build();
 
-		RetryingCall.enqueue(httpClient, executor, request, new Callback()
+		RetryingCall.enqueue(httpClient, executor, request, this::onRetry, new Callback()
 		{
 			@Override
 			public void onFailure(Call call, IOException e)
@@ -158,7 +159,7 @@ public class TrackedItemManager
 					if (!r.isSuccessful() || r.body() == null)
 					{
 						itemListRequested.set(false);
-						warn("Failed to fetch Ironkin tracked item list: HTTP " + r.code());
+						warn("Failed to fetch Ironkin tracked item list: HTTP " + r.code() + " - server response: " + ResponsePreview.of(r));
 						return;
 					}
 
@@ -205,10 +206,22 @@ public class TrackedItemManager
 						listener.onTrackedItemsUpdated(resolved);
 					}
 
-					log.debug("Loaded {} tracked events with {} unique items", body.events.size(), itemNames.size());
+					if (diagnosticListener != null)
+					{
+						diagnosticListener.onDiagnosticEvent(
+							"Loaded " + body.events.size() + " tracked events with " + itemNames.size() + " unique items", true);
+					}
 				});
 			}
 		});
+	}
+
+	private void onRetry(String message)
+	{
+		if (diagnosticListener != null)
+		{
+			diagnosticListener.onDiagnosticEvent(message, false);
+		}
 	}
 
 	private void warn(String message)

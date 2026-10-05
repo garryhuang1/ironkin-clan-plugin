@@ -3,6 +3,7 @@ package com.ironkinclan.manager;
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
 import com.ironkinclan.api.IronkinClanApiClient;
+import com.ironkinclan.api.ResponsePreview;
 import com.ironkinclan.config.IronkinClanConfig;
 import java.io.IOException;
 import java.util.concurrent.ScheduledExecutorService;
@@ -113,7 +114,7 @@ public class EmberManager
 				{
 					if (!r.isSuccessful() || r.body() == null)
 					{
-						warn("Failed to fetch Ironkin ember balance: HTTP " + r.code());
+						warn("Failed to fetch Ironkin ember balance: HTTP " + r.code() + " - server response: " + ResponsePreview.of(r));
 						return;
 					}
 
@@ -137,7 +138,11 @@ public class EmberManager
 					? body.balance - previousBalance
 					: null;
 
-				log.debug("Ember balance updated: {} (previous: {})", body.balance, previousBalance);
+				if (diagnosticListener != null)
+				{
+					diagnosticListener.onDiagnosticEvent(
+						"Ember balance updated: " + body.balance + " (previous: " + previousBalance + ")", true);
+				}
 
 				if (listener != null)
 				{
