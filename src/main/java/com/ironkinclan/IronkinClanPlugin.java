@@ -9,6 +9,7 @@ import com.ironkinclan.manager.EmberManager;
 import com.ironkinclan.manager.GroupComposition;
 import com.ironkinclan.manager.PersonalBestManager;
 import com.ironkinclan.manager.PersonalBestMessageParser;
+import com.ironkinclan.manager.RaidPartyTracker;
 import com.ironkinclan.manager.RemoteLogListener;
 import com.ironkinclan.manager.RemoteLogManager;
 import com.ironkinclan.manager.TrackedItemManager;
@@ -19,7 +20,9 @@ import com.ironkinclan.ui.IronkinClanPanel;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import javax.inject.Inject;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
@@ -29,6 +32,9 @@ import net.runelite.client.config.ConfigManager;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.InteractingChanged;
+import net.runelite.api.events.PlayerSpawned;
+import net.runelite.api.events.VarClientStrChanged;
+import net.runelite.api.events.VarbitChanged;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.game.ItemManager;
@@ -90,6 +96,9 @@ public class IronkinClanPlugin extends Plugin
 	private ClanMemberManager clanMemberManager;
 
 	@Inject
+	private RaidPartyTracker raidPartyTracker;
+
+	@Inject
 	private EmberManager emberManager;
 
 	@Inject
@@ -134,6 +143,7 @@ public class IronkinClanPlugin extends Plugin
 		if (config.enableDropTracking())
 		{
 			trackedItemManager.fetch();
+			syncRaidParty();
 		}
 
 		emberManager.setListener(this::onEmberBalanceUpdated);
@@ -167,6 +177,7 @@ public class IronkinClanPlugin extends Plugin
 		dropSubmissionManager.setListener(null);
 		dropSubmissionManager.setDiagnosticListener(null);
 		lastTrackedEvents = Collections.emptyList();
+		clientThread.invoke(raidPartyTracker::reset);
 
 		emberManager.stop();
 		emberManager.setListener(null);
@@ -259,6 +270,7 @@ public class IronkinClanPlugin extends Plugin
 				if (config.enableDropTracking())
 				{
 					trackedItemManager.fetch();
+					syncRaidParty();
 				}
 				break;
 			case "showDebugLog":
@@ -297,6 +309,48 @@ public class IronkinClanPlugin extends Plugin
 		else if (state == GameState.LOGIN_SCREEN)
 		{
 			emberManager.stop();
+		}
+	}
+
+	// The raid party is only followed while drop tracking is on, so a raid that was already under
+	// way when it was switched on (or when the plugin started) has to be picked up by hand.
+	private void syncRaidParty()
+	{
+		clientThread.invoke(() ->
+		{
+			if (client.getGameState() == GameState.LOGGED_IN)
+			{
+				raidPartyTracker.sync();
+			}
+		});
+	}
+
+	// The three subscribers below feed RaidPartyTracker, which remembers the raid party so a
+	// pvm-entry drop from a raid chest can credit teammates who have already left.
+	@Subscribe
+	public void onVarbitChanged(VarbitChanged event)
+	{
+		if (config.enableDropTracking())
+		{
+			raidPartyTracker.onVarbitChanged(event.getVarbitId(), event.getValue());
+		}
+	}
+
+	@Subscribe
+	public void onVarClientStrChanged(VarClientStrChanged event)
+	{
+		if (config.enableDropTracking())
+		{
+			raidPartyTracker.onVarClientStrChanged(event.getIndex());
+		}
+	}
+
+	@Subscribe
+	public void onPlayerSpawned(PlayerSpawned event)
+	{
+		if (config.enableDropTracking())
+		{
+			raidPartyTracker.onPlayerSpawned(event.getPlayer());
 		}
 	}
 
@@ -473,12 +527,22 @@ public class IronkinClanPlugin extends Plugin
 					if (groupComposition == null)
 					{
 						groupComposition = clanMemberManager.getNearbyGroupComposition();
+						// A raid chest is opened after the fight, when teammates may have left
+						// already, so the party remembered over the raid counts as well.
+						if (RaidPartyTracker.isRaidLoot(event.getName()))
+						{
+							List<String> raidClanMembers = raidPartyTracker.getClanMembers(event.getName());
+							logDiagnostic("Raid party for " + event.getName() + ": " + raidClanMembers.size()
+								+ " clan member(s) among " + raidPartyTracker.getPartySize(event.getName()) + " other party member(s)", true);
+							groupComposition = groupComposition.withRaidClanMembers(raidClanMembers);
+						}
 					}
 
 					if (!groupComposition.hasClanBackup())
 					{
-						logDiagnostic("Skipping " + itemName + " for " + eventId + ": no other clan member was nearby ("
-							+ groupComposition.clanPlayers + "/" + groupComposition.totalPlayers + ")", false);
+						logDiagnostic("Skipping " + itemName + " for " + eventId + ": no other clan member was nearby"
+							+ " or in the raid party (" + groupComposition.clanPlayers + "/" + groupComposition.totalPlayers + ")", false);
+						reportSkippedGroupBossDrop(event, item.getId(), groupComposition);
 						continue;
 					}
 
@@ -488,6 +552,30 @@ public class IronkinClanPlugin extends Plugin
 				dropSubmissionManager.reportDrop(eventId, username, item.getId(), itemName, participants);
 			}
 		}
+	}
+
+	// A skipped pvm-entry drop is the one a clan member is most likely to ask about, so it is
+	// also sent to the logging service. Counts only: the names behind them stay on this machine.
+	// The loot source is safe to send here because PLAYER-type loot never gets this far.
+	private void reportSkippedGroupBossDrop(LootReceived event, int itemId, GroupComposition groupComposition)
+	{
+		boolean raidLoot = RaidPartyTracker.isRaidLoot(event.getName());
+
+		Map<String, Object> context = new LinkedHashMap<>();
+		context.put("eventId", GROUP_BOSS_EVENT_ID);
+		context.put("itemId", itemId);
+		context.put("lootSource", event.getName());
+		context.put("lootType", String.valueOf(event.getType()));
+		context.put("clanPlayers", groupComposition.clanPlayers);
+		context.put("totalPlayers", groupComposition.totalPlayers);
+		context.put("inClanChannel", client.getClanChannel() != null);
+		context.put("raidLoot", raidLoot);
+		if (raidLoot)
+		{
+			context.put("raidPartySize", raidPartyTracker.getPartySize(event.getName()));
+		}
+
+		remoteLogManager.log(RemoteLogListener.Level.WARN, "Skipped pvm-entry drop: no other clan member present", context);
 	}
 
 	// Drop upload results are actionable per-event feedback, so they're echoed to game chat in

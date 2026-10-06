@@ -1,5 +1,6 @@
 package com.ironkinclan.manager;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -18,6 +19,23 @@ public class GroupComposition
 		this.totalPlayers = totalPlayers;
 		this.clanPlayers = clanPlayers;
 		this.clanMembers = clanMembers;
+	}
+
+	// Adds the clan members of the raid party who are not standing nearby any more (see
+	// RaidPartyTracker), so they count towards eligibility and are credited as participants.
+	public GroupComposition withRaidClanMembers(List<String> raidClanMembers)
+	{
+		List<String> merged = new ArrayList<>(clanMembers);
+		for (String name : raidClanMembers)
+		{
+			if (!merged.contains(name))
+			{
+				merged.add(name);
+			}
+		}
+
+		int added = merged.size() - clanMembers.size();
+		return new GroupComposition(totalPlayers + added, clanPlayers + added, merged);
 	}
 
 	// At least one other clan member must be nearby. Solo kills never qualify - clanPlayers must

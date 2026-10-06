@@ -36,6 +36,7 @@ src/main/java/com/ironkinclan/
     CurrentBossTracker.java     Remembers the last tracked boss the player fought
     EmberManager.java           Polls the ember balance on a schedule
     ClanMemberManager.java      Counts nearby players and nearby clan members
+    RaidPartyTracker.java       Remembers the clan members in the current raid party
     GroupComposition.java       Value object returned by ClanMemberManager
     DiagnosticListener.java     (text, success) callback shared by the managers
     RemoteLogManager.java       Queues, dedupes and batch-sends events to the logging service
@@ -133,7 +134,17 @@ else. Note the two auth headers: `x-api-key` for the events and embers endpoints
 4. For the event ID `pvm-entry` (`IronkinClanPlugin.GROUP_BOSS_EVENT_ID`) only, nearby clan members
    are attached as `participants`, and the drop is skipped for that event if no other clan member
    is nearby (`GroupComposition.hasClanBackup()`).
-5. `reportDrop` captures the next frame via `DrawManager`, hands off to the executor to PNG- and
+5. For loot from a raid chest (`RaidPartyTracker.isRaidLoot`), the clan members of the raid party
+   are merged in first (`GroupComposition.withRaidClanMembers`). The chest is opened after the
+   fight, when teammates have often left, so vicinity alone wrongly skipped these drops.
+   `RaidPartyTracker` collects the party over the whole raid: from the party name varcs in Theatre
+   of Blood and Tombs of Amascut, and from the players seen inside the dungeon in Chambers of
+   Xeric, which exposes no names. Each raid has its own party, replaced only when that raid is
+   entered again: leaving the raid or the party must not forget it, because unclaimed loot can be
+   collected from the lobby chest afterwards.
+   A `pvm-entry` drop that is still skipped is reported to the logging service as a warning
+   (`reportSkippedGroupBossDrop`), with player counts and the loot source but no names.
+6. `reportDrop` captures the next frame via `DrawManager`, hands off to the executor to PNG- and
    base64-encode it, then uploads through `RetryingCall`.
 
 ### Flow: personal best
@@ -153,7 +164,7 @@ enum's Javadoc) and is the one sanctioned exception to the "use gameval constant
 
 | Thread | What runs there |
 | --- | --- |
-| Client thread | The game-event `@Subscribe` handlers (loot, chat, interacting, game state); anything touching `Client` or `ItemManager.getItemComposition`; `ClanMemberManager.getNearbyGroupComposition()` |
+| Client thread | The game-event `@Subscribe` handlers (loot, chat, interacting, game state, varbit, varc string, player spawn); anything touching `Client` or `ItemManager.getItemComposition`; `ClanMemberManager.getNearbyGroupComposition()`; every `RaidPartyTracker` method |
 | OkHttp pool | Every `Callback.onResponse` / `onFailure` |
 | Shared `ScheduledExecutorService` | Screenshot encoding, retry backoff scheduling, the ember poll, the remote log flush |
 | Swing EDT | All panel mutation; `onPanelActivated`; usually `onConfigChanged` (it fires on whichever thread changed the setting, so do not assume the client thread there) |
@@ -234,7 +245,8 @@ panel, the overlay, or `EmberManager`, so logic worth testing belongs in a manag
 - **PvP loot is never reported.** `LootRecordType.PLAYER` is dropped on purpose; reporting it would
   crowdsource another player's gear. Do not "fix" this.
 - **Participants are limited to members of the user's own clan channel**, and only for `pvm-entry`.
-  Do not widen this to arbitrary nearby players.
+  Do not widen this to arbitrary nearby players. `RaidPartyTracker` holds the other raid party
+  names in memory to check them against the clan channel, but only clan members are ever sent.
 - **Loot detection depends on the built-in Loot Tracker plugin being enabled.**
 - **Nothing is written to disk.** All state is in memory and rebuilt from the server. The one
   persisted value is the `installId` config entry.
