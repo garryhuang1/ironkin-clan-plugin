@@ -203,13 +203,15 @@ public class RemoteLogManagerTest
 	@Test
 	public void logException_sendsStackTraceWithUnixLineEndings() throws IOException
 	{
-		manager.logException("Unexpected error while processing loot", new IllegalStateException("boom"), null);
+		manager.logException("Unexpected error while processing loot",
+			new IllegalStateException("boom", new IOException("root cause")), null);
 		manager.flush();
 
 		JsonObject event = sentBody(0).getAsJsonArray("events").get(0).getAsJsonObject();
 		assertEquals("error", event.get("level").getAsString());
 		String stack = event.get("stack").getAsString();
 		assertTrue(stack.startsWith("java.lang.IllegalStateException: boom\n\tat "));
+		assertTrue(stack.contains("\nCaused by: java.io.IOException: root cause\n\tat "));
 		assertFalse(stack.contains("\r"));
 	}
 

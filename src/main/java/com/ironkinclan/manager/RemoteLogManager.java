@@ -5,8 +5,6 @@ import com.ironkinclan.api.IronkinClanApiClient;
 import com.ironkinclan.config.IronkinClanConfig;
 import com.ironkinclan.manager.RemoteLogListener.Level;
 import java.io.IOException;
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -48,6 +46,7 @@ public class RemoteLogManager
 	static final int MAX_EVENTS_PER_REQUEST = 50;
 	static final int MAX_MESSAGE_LENGTH = 2000;
 	static final int MAX_STACK_LENGTH = 16000;
+	private static final int MAX_CAUSE_DEPTH = 5;
 	// The endpoint allows 4,000; the margin leaves room for the "occurrences" entry added on send.
 	private static final int MAX_CONTEXT_LENGTH = 3900;
 	// The endpoint allows 256 KB for the whole body; the margin covers the envelope.
@@ -122,6 +121,8 @@ public class RemoteLogManager
 	// text in the context instead.
 	public void logException(String message, Throwable cause, Map<String, Object> context)
 	{
+		// Logged locally whether or not reporting is enabled, so the stack trace is never lost.
+		log.warn(message, cause);
 		enqueue(Level.ERROR, message, cause, context);
 	}
 
@@ -325,13 +326,28 @@ public class RemoteLogManager
 		}
 	}
 
-	// Line endings are normalised because printStackTrace uses the platform separator, and the
-	// service fingerprints the trace line by line.
+	// The text the ingest endpoint expects in "stack": the exception, then one "\tat frame" line
+	// per frame, then the same for each cause. Always \n-separated, because the service
+	// fingerprints the trace line by line.
 	private static String stackTraceOf(Throwable cause)
 	{
-		StringWriter writer = new StringWriter();
-		cause.printStackTrace(new PrintWriter(writer));
-		return writer.toString().replace("\r\n", "\n").trim();
+		StringBuilder stack = new StringBuilder();
+		Throwable current = cause;
+		// Depth-limited so a cause chain that loops back on itself can't spin forever.
+		for (int depth = 0; current != null && depth < MAX_CAUSE_DEPTH; depth++)
+		{
+			if (depth > 0)
+			{
+				stack.append("Caused by: ");
+			}
+			stack.append(current).append('\n');
+			for (StackTraceElement frame : current.getStackTrace())
+			{
+				stack.append("\tat ").append(frame).append('\n');
+			}
+			current = current.getCause();
+		}
+		return stack.toString().trim();
 	}
 
 	private static String truncate(String text, int maxLength)
