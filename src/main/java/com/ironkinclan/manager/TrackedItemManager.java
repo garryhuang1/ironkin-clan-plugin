@@ -3,6 +3,7 @@ package com.ironkinclan.manager;
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
 import com.ironkinclan.api.IronkinClanApiClient;
+import com.ironkinclan.api.RequestSummary;
 import com.ironkinclan.api.ResponsePreview;
 import com.ironkinclan.api.RetryingCall;
 import com.ironkinclan.config.IronkinClanConfig;
@@ -68,6 +69,7 @@ public class TrackedItemManager
 
 	private Listener listener;
 	private DiagnosticListener diagnosticListener;
+	private RemoteLogListener remoteLogListener;
 
 	public void setListener(Listener listener)
 	{
@@ -77,6 +79,11 @@ public class TrackedItemManager
 	public void setDiagnosticListener(DiagnosticListener diagnosticListener)
 	{
 		this.diagnosticListener = diagnosticListener;
+	}
+
+	public void setRemoteLogListener(RemoteLogListener remoteLogListener)
+	{
+		this.remoteLogListener = remoteLogListener;
 	}
 
 	public boolean hasTrackedItems()
@@ -148,6 +155,8 @@ public class TrackedItemManager
 			{
 				itemListRequested.set(false);
 				warn("Failed to fetch Ironkin tracked item list: " + e.getMessage(), e);
+				notifyRemote(RemoteLogListener.Level.WARN, "Failed to fetch tracked item list",
+					Map.of("exception", e.toString(), "request", RequestSummary.of(request, null)));
 			}
 
 			@Override
@@ -159,7 +168,10 @@ public class TrackedItemManager
 					if (!r.isSuccessful() || r.body() == null)
 					{
 						itemListRequested.set(false);
-						warn("Failed to fetch Ironkin tracked item list: HTTP " + r.code() + " - server response: " + ResponsePreview.of(r));
+						String serverResponse = ResponsePreview.of(r);
+						warn("Failed to fetch Ironkin tracked item list: HTTP " + r.code() + " - server response: " + serverResponse);
+						notifyRemote(RemoteLogListener.Level.WARN, "Tracked item list fetch returned an HTTP error",
+							Map.of("httpStatus", r.code(), "request", RequestSummary.of(request, null), "response", serverResponse));
 						return;
 					}
 
@@ -168,6 +180,9 @@ public class TrackedItemManager
 					{
 						itemListRequested.set(false);
 						warn("Ironkin tracked item list response was empty or malformed");
+						// No response content here or on a parse failure: a successful item list
+						// reply carries the event passwords.
+						notifyRemote(RemoteLogListener.Level.WARN, "Tracked item list response was empty or malformed", null);
 						return;
 					}
 				}
@@ -175,6 +190,7 @@ public class TrackedItemManager
 				{
 					itemListRequested.set(false);
 					warn("Failed to parse Ironkin tracked item list: " + e.getMessage(), e);
+					notifyRemote(RemoteLogListener.Level.WARN, "Failed to parse tracked item list", Map.of("exception", e.toString()));
 					return;
 				}
 
@@ -239,6 +255,14 @@ public class TrackedItemManager
 		if (diagnosticListener != null)
 		{
 			diagnosticListener.onDiagnosticEvent(message, false);
+		}
+	}
+
+	private void notifyRemote(RemoteLogListener.Level level, String message, Map<String, Object> context)
+	{
+		if (remoteLogListener != null)
+		{
+			remoteLogListener.onRemoteLogEvent(level, message, context);
 		}
 	}
 

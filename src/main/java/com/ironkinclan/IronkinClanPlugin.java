@@ -9,6 +9,8 @@ import com.ironkinclan.manager.EmberManager;
 import com.ironkinclan.manager.GroupComposition;
 import com.ironkinclan.manager.PersonalBestManager;
 import com.ironkinclan.manager.PersonalBestMessageParser;
+import com.ironkinclan.manager.RemoteLogListener;
+import com.ironkinclan.manager.RemoteLogManager;
 import com.ironkinclan.manager.TrackedItemManager;
 import com.ironkinclan.model.BossActivity;
 import com.ironkinclan.model.TrackedEventGroup;
@@ -96,6 +98,9 @@ public class IronkinClanPlugin extends Plugin
 	@Inject
 	private PersonalBestManager personalBestManager;
 
+	@Inject
+	private RemoteLogManager remoteLogManager;
+
 	private IronkinClanPanel panel;
 	private NavigationButton navButton;
 	private List<TrackedEventGroup> lastTrackedEvents = Collections.emptyList();
@@ -140,6 +145,15 @@ public class IronkinClanPlugin extends Plugin
 
 		personalBestManager.setListener(this::logUploadEvent);
 		personalBestManager.setDiagnosticListener(this::logDiagnostic);
+
+		// Always scheduled: the manager itself checks the opt-in setting on every event and every
+		// send, so toggling it needs no restart and nothing is queued or sent while it is off.
+		trackedItemManager.setRemoteLogListener(remoteLogManager::log);
+		dropSubmissionManager.setRemoteLogListener(remoteLogManager::log);
+		emberManager.setRemoteLogListener(remoteLogManager::log);
+		personalBestManager.setRemoteLogListener(remoteLogManager::log);
+		remoteLogManager.start();
+		remoteLogManager.log(RemoteLogListener.Level.INFO, "Plugin started", null);
 	}
 
 	@Override
@@ -162,6 +176,12 @@ public class IronkinClanPlugin extends Plugin
 		personalBestManager.setListener(null);
 		personalBestManager.setDiagnosticListener(null);
 		currentBossTracker.reset();
+
+		trackedItemManager.setRemoteLogListener(null);
+		dropSubmissionManager.setRemoteLogListener(null);
+		emberManager.setRemoteLogListener(null);
+		personalBestManager.setRemoteLogListener(null);
+		remoteLogManager.stop();
 	}
 
 	private void onPanelActivated()
@@ -311,6 +331,7 @@ public class IronkinClanPlugin extends Plugin
 		catch (Exception e)
 		{
 			logDiagnostic("Unexpected error while processing a new personal best message: " + e, false);
+			remoteLogManager.logException("Unexpected error while processing a personal best message", e, null);
 		}
 	}
 
@@ -386,6 +407,8 @@ public class IronkinClanPlugin extends Plugin
 		catch (Exception e)
 		{
 			logDiagnostic("Unexpected error while processing loot from " + event.getName() + ": " + e, false);
+			// The loot source is left out: for PvP loot it is another player's name.
+			remoteLogManager.logException("Unexpected error while processing loot", e, null);
 		}
 	}
 

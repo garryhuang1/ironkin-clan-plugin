@@ -70,4 +70,17 @@ public interface IronkinClanConfig extends Config
 	{
 		return false;
 	}
+
+	@ConfigItem(
+		keyName = "enableErrorReporting",
+		name = "Send error reports",
+		description = "Sends plugin errors (e.g. failed uploads) to the Ironkin logging service to help fix bugs."
+			+ " Reports carry a random install ID, the failed request without your player name or screenshot,"
+			+ " and the Ironkin server's error reply",
+		warning = "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers"
+	)
+	default boolean enableErrorReporting()
+	{
+		return false;
+	}
 }

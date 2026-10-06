@@ -14,6 +14,7 @@ public class IronkinClanApiClient
 {
 	public static final String API_KEY_HEADER = "x-api-key";
 	public static final String PLUGIN_KEY_HEADER = "X-Ironkin-Plugin-Key";
+	public static final String LOG_SERVICE_URL = "https://ironkin-logging-platform.garryhuang2.workers.dev";
 	public static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
 	private final IronkinClanConfig config;
@@ -46,6 +47,15 @@ public class IronkinClanApiClient
 		return new Request.Builder()
 			.url(baseUrl() + "/api/hall-of-flame/plugin-submit")
 			.header(PLUGIN_KEY_HEADER, config.apiKey());
+	}
+
+	// The logging service is a separate server from the Ironkin one and its ingest endpoint is
+	// unauthenticated, so this must never carry the API key. Its URL is fixed rather than
+	// configurable: error reports should only ever go to the one service the setting discloses.
+	public Request.Builder newLogIngestRequest()
+	{
+		return new Request.Builder()
+			.url(LOG_SERVICE_URL + "/api/ingest");
 	}
 
 	private Request.Builder authenticatedRequest(String url)

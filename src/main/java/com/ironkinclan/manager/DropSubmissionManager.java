@@ -3,6 +3,7 @@ package com.ironkinclan.manager;
 import com.google.gson.Gson;
 import com.google.gson.annotations.SerializedName;
 import com.ironkinclan.api.IronkinClanApiClient;
+import com.ironkinclan.api.RequestSummary;
 import com.ironkinclan.api.ResponsePreview;
 import com.ironkinclan.api.RetryingCall;
 import java.awt.Image;
@@ -12,6 +13,7 @@ import java.io.IOException;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ScheduledExecutorService;
 import javax.imageio.ImageIO;
 import javax.inject.Inject;
@@ -50,6 +52,7 @@ public class DropSubmissionManager
 
 	private DiagnosticListener listener;
 	private DiagnosticListener diagnosticListener;
+	private RemoteLogListener remoteLogListener;
 
 	public void setListener(DiagnosticListener listener)
 	{
@@ -61,6 +64,13 @@ public class DropSubmissionManager
 	public void setDiagnosticListener(DiagnosticListener diagnosticListener)
 	{
 		this.diagnosticListener = diagnosticListener;
+	}
+
+	// Unlike the two listeners above, what goes here leaves the machine, so it never gets the
+	// username, the participants, the screenshot or the headers.
+	public void setRemoteLogListener(RemoteLogListener remoteLogListener)
+	{
+		this.remoteLogListener = remoteLogListener;
 	}
 
 	public void reportDrop(String eventId, String username, int itemId, String itemName)
@@ -92,6 +102,8 @@ public class DropSubmissionManager
 		{
 			log.warn("Failed to encode Ironkin drop screenshot for item {}", itemId, e);
 			notifyListener("Failed to capture screenshot for " + itemName, false);
+			notifyRemote(RemoteLogListener.Level.ERROR, "Failed to encode drop screenshot",
+				Map.of("eventId", eventId, "itemId", itemId, "exception", e.toString()));
 			return;
 		}
 
@@ -109,6 +121,11 @@ public class DropSubmissionManager
 			.post(body)
 			.build();
 
+		// What goes to the logging service if the upload fails: the request without the screenshot
+		// and without the player names (username, participants), which must not leave the machine.
+		Map<String, Object> reportedRequest = RequestSummary.of(request,
+			Map.of("itemid", itemId, "timestamp", timestamp, "participantCount", participants.size()));
+
 		RetryingCall.enqueue(httpClient, executor, request, message -> notifyDiagnostic(message, false), new Callback()
 		{
 			@Override
@@ -117,6 +134,8 @@ public class DropSubmissionManager
 				log.warn("Failed to upload Ironkin drop report for item {} to event {}", itemId, eventId, e);
 				notifyListener("Failed to send " + itemName + " drop to " + eventId + ": " + e.getMessage(), false);
 				notifyFailedRequest(request, loggedBody);
+				notifyRemote(RemoteLogListener.Level.ERROR, "Failed to upload drop",
+					Map.of("eventId", eventId, "itemId", itemId, "exception", e.toString(), "request", reportedRequest));
 			}
 
 			@Override
@@ -129,7 +148,11 @@ public class DropSubmissionManager
 						log.warn("Ironkin drop report upload failed for item {} to event {}: HTTP {}", itemId, eventId, r.code());
 						notifyListener("Failed to send " + itemName + " drop to " + eventId + " (HTTP " + r.code() + ")", false);
 						notifyFailedRequest(request, loggedBody);
-						notifyDiagnostic("Server response (HTTP " + r.code() + "): " + ResponsePreview.of(r), false);
+						String serverResponse = ResponsePreview.of(r);
+						notifyDiagnostic("Server response (HTTP " + r.code() + "): " + serverResponse, false);
+						notifyRemote(RemoteLogListener.Level.ERROR, "Drop upload returned an HTTP error",
+							Map.of("eventId", eventId, "itemId", itemId, "httpStatus", r.code(),
+								"request", reportedRequest, "response", serverResponse));
 					}
 					else
 					{
@@ -159,6 +182,14 @@ public class DropSubmissionManager
 		if (diagnosticListener != null)
 		{
 			diagnosticListener.onDiagnosticEvent(text, success);
+		}
+	}
+
+	private void notifyRemote(RemoteLogListener.Level level, String message, Map<String, Object> context)
+	{
+		if (remoteLogListener != null)
+		{
+			remoteLogListener.onRemoteLogEvent(level, message, context);
 		}
 	}
 

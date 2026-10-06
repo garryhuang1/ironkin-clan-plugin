@@ -1,12 +1,14 @@
 package com.ironkinclan.manager;
 
 import com.ironkinclan.api.IronkinClanApiClient;
+import com.ironkinclan.api.RequestSummary;
 import com.ironkinclan.api.ResponsePreview;
 import com.ironkinclan.api.RetryingCall;
 import java.awt.Image;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.Map;
 import java.util.concurrent.ScheduledExecutorService;
 import javax.imageio.ImageIO;
 import javax.inject.Inject;
@@ -45,6 +47,7 @@ public class PersonalBestManager
 
 	private DiagnosticListener listener;
 	private DiagnosticListener diagnosticListener;
+	private RemoteLogListener remoteLogListener;
 
 	public void setListener(DiagnosticListener listener)
 	{
@@ -56,6 +59,13 @@ public class PersonalBestManager
 	public void setDiagnosticListener(DiagnosticListener diagnosticListener)
 	{
 		this.diagnosticListener = diagnosticListener;
+	}
+
+	// Unlike the two listeners above, what goes here leaves the machine, so it never gets the
+	// username, the screenshot or the headers.
+	public void setRemoteLogListener(RemoteLogListener remoteLogListener)
+	{
+		this.remoteLogListener = remoteLogListener;
 	}
 
 	public void reportPersonalBest(String username, String bossName, String time)
@@ -78,6 +88,8 @@ public class PersonalBestManager
 		catch (IOException e)
 		{
 			notifyListener("Failed to capture screenshot for " + bossName + " personal best", false);
+			notifyRemote(RemoteLogListener.Level.ERROR, "Failed to encode personal best screenshot",
+				Map.of("boss", bossName, "exception", e.toString()));
 			return;
 		}
 
@@ -98,6 +110,10 @@ public class PersonalBestManager
 			.post(body)
 			.build();
 
+		// What goes to the logging service if the upload fails: the form fields without the proof
+		// image and without the player name, which must not leave the machine.
+		Map<String, Object> reportedRequest = RequestSummary.of(request, Map.of("boss", bossName, "time", time));
+
 		RetryingCall.enqueue(httpClient, executor, request, message -> notifyDiagnostic(message, false), new Callback()
 		{
 			@Override
@@ -105,6 +121,8 @@ public class PersonalBestManager
 			{
 				notifyListener("Failed to send " + bossName + " personal best (" + time + "): " + e.getMessage(), false);
 				notifyFailedRequest(request, loggedBody);
+				notifyRemote(RemoteLogListener.Level.ERROR, "Failed to upload personal best",
+					Map.of("boss", bossName, "time", time, "exception", e.toString(), "request", reportedRequest));
 			}
 
 			@Override
@@ -116,7 +134,11 @@ public class PersonalBestManager
 					{
 						notifyListener("Failed to send " + bossName + " personal best (HTTP " + r.code() + ")", false);
 						notifyFailedRequest(request, loggedBody);
-						notifyDiagnostic("Server response (HTTP " + r.code() + "): " + ResponsePreview.of(r), false);
+						String serverResponse = ResponsePreview.of(r);
+						notifyDiagnostic("Server response (HTTP " + r.code() + "): " + serverResponse, false);
+						notifyRemote(RemoteLogListener.Level.ERROR, "Personal best upload returned an HTTP error",
+							Map.of("boss", bossName, "time", time, "httpStatus", r.code(),
+								"request", reportedRequest, "response", serverResponse));
 					}
 					else
 					{
@@ -146,6 +168,14 @@ public class PersonalBestManager
 		if (diagnosticListener != null)
 		{
 			diagnosticListener.onDiagnosticEvent(text, success);
+		}
+	}
+
+	private void notifyRemote(RemoteLogListener.Level level, String message, Map<String, Object> context)
+	{
+		if (remoteLogListener != null)
+		{
+			remoteLogListener.onRemoteLogEvent(level, message, context);
 		}
 	}
 }

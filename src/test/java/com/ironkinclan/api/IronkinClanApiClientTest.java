@@ -6,6 +6,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -49,6 +50,16 @@ public class IronkinClanApiClientTest
 
 		assertEquals("https://ironkin.example.com/api/hall-of-flame/plugin-submit", request.url().toString());
 		assertEquals("secret-key", request.header(IronkinClanApiClient.PLUGIN_KEY_HEADER));
+	}
+
+	@Test
+	public void newLogIngestRequest_usesLogServiceUrlAndCarriesNoApiKey()
+	{
+		Request request = apiClient.newLogIngestRequest().build();
+
+		assertEquals("https://ironkin-logging-platform.garryhuang2.workers.dev/api/ingest", request.url().toString());
+		assertNull(request.header(IronkinClanApiClient.API_KEY_HEADER));
+		assertNull(request.header(IronkinClanApiClient.PLUGIN_KEY_HEADER));
 	}
 
 	@Test

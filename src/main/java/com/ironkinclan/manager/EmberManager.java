@@ -3,9 +3,11 @@ package com.ironkinclan.manager;
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
 import com.ironkinclan.api.IronkinClanApiClient;
+import com.ironkinclan.api.RequestSummary;
 import com.ironkinclan.api.ResponsePreview;
 import com.ironkinclan.config.IronkinClanConfig;
 import java.io.IOException;
+import java.util.Map;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -46,6 +48,7 @@ public class EmberManager
 
 	private Listener listener;
 	private DiagnosticListener diagnosticListener;
+	private RemoteLogListener remoteLogListener;
 
 	@Inject
 	public EmberManager(IronkinClanConfig config, IronkinClanApiClient apiClient, OkHttpClient httpClient,
@@ -66,6 +69,11 @@ public class EmberManager
 	public void setDiagnosticListener(DiagnosticListener diagnosticListener)
 	{
 		this.diagnosticListener = diagnosticListener;
+	}
+
+	public void setRemoteLogListener(RemoteLogListener remoteLogListener)
+	{
+		this.remoteLogListener = remoteLogListener;
 	}
 
 	public void start()
@@ -104,6 +112,8 @@ public class EmberManager
 			public void onFailure(Call call, IOException e)
 			{
 				warn("Failed to fetch Ironkin ember balance: " + e.getMessage(), e);
+				notifyRemote(RemoteLogListener.Level.WARN, "Failed to fetch ember balance",
+					Map.of("exception", e.toString(), "request", RequestSummary.of(request, null)));
 			}
 
 			@Override
@@ -114,7 +124,10 @@ public class EmberManager
 				{
 					if (!r.isSuccessful() || r.body() == null)
 					{
-						warn("Failed to fetch Ironkin ember balance: HTTP " + r.code() + " - server response: " + ResponsePreview.of(r));
+						String serverResponse = ResponsePreview.of(r);
+						warn("Failed to fetch Ironkin ember balance: HTTP " + r.code() + " - server response: " + serverResponse);
+						notifyRemote(RemoteLogListener.Level.WARN, "Ember balance fetch returned an HTTP error",
+							Map.of("httpStatus", r.code(), "request", RequestSummary.of(request, null), "response", serverResponse));
 						return;
 					}
 
@@ -122,12 +135,14 @@ public class EmberManager
 					if (body == null)
 					{
 						warn("Ironkin ember balance response was empty or malformed");
+						notifyRemote(RemoteLogListener.Level.WARN, "Ember balance response was empty or malformed", null);
 						return;
 					}
 				}
 				catch (JsonSyntaxException e)
 				{
 					warn("Failed to parse Ironkin ember balance: " + e.getMessage(), e);
+					notifyRemote(RemoteLogListener.Level.WARN, "Failed to parse ember balance", Map.of("exception", e.toString()));
 					return;
 				}
 
@@ -167,6 +182,14 @@ public class EmberManager
 		if (diagnosticListener != null)
 		{
 			diagnosticListener.onDiagnosticEvent(message, false);
+		}
+	}
+
+	private void notifyRemote(RemoteLogListener.Level level, String message, Map<String, Object> context)
+	{
+		if (remoteLogListener != null)
+		{
+			remoteLogListener.onRemoteLogEvent(level, message, context);
 		}
 	}
 

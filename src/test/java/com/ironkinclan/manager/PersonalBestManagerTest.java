@@ -3,7 +3,9 @@ package com.ironkinclan.manager;
 import com.ironkinclan.api.IronkinClanApiClient;
 import com.ironkinclan.config.IronkinClanConfig;
 import java.awt.image.BufferedImage;
+import com.google.gson.Gson;
 import java.io.IOException;
+import java.util.Map;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import net.runelite.client.ui.DrawManager;
@@ -177,6 +179,32 @@ public class PersonalBestManagerTest
 		assertTrue(text.startsWith("Failed request was POST " + SUBMIT_URL + " with body: "));
 		assertTrue(text.contains("player=PlayerName, boss=Vardorvis, time=1:23.40, proof=[PNG, "));
 		assertTrue(!text.contains("secret-key"));
+	}
+
+	@Test
+	public void uploadPersonalBest_httpError_reportsRequestAndResponseWithoutScreenshotNameOrApiKey()
+	{
+		RemoteLogListener remoteLogListener = mock(RemoteLogListener.class);
+		manager.setRemoteLogListener(remoteLogListener);
+		respondWith(500);
+
+		manager.uploadPersonalBest("PlayerName", "Vardorvis", "1:23.40", testImage());
+
+		@SuppressWarnings("unchecked")
+		ArgumentCaptor<Map<String, Object>> contextCaptor = ArgumentCaptor.forClass(Map.class);
+		verify(remoteLogListener).onRemoteLogEvent(eq(RemoteLogListener.Level.ERROR),
+			eq("Personal best upload returned an HTTP error"), contextCaptor.capture());
+		String context = new Gson().toJson(contextCaptor.getValue());
+
+		assertTrue(context.contains("\"method\":\"POST\""));
+		assertTrue(context.contains("\"url\":\"https://ironkin.example.com/api/hall-of-flame/plugin-submit\""));
+		assertTrue(context.contains("\"boss\":\"Vardorvis\""));
+		assertTrue(context.contains("\"time\":\"1:23.40\""));
+		assertTrue(context.contains("\"response\":"));
+		assertTrue(context.contains("\"httpStatus\":500"));
+		assertTrue(!context.contains("proof"));
+		assertTrue(!context.contains("PlayerName"));
+		assertTrue(!context.contains("secret-key"));
 	}
 
 	@Test

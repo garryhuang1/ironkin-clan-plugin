@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import net.runelite.client.ui.DrawManager;
@@ -194,6 +195,35 @@ public class DropSubmissionManagerTest
 		assertTrue(text.contains("\"participants\":[\"Clanmate1\",\"Clanmate2\"]"));
 		assertTrue(text.contains("\"imageData\":\"[base64 PNG, "));
 		assertTrue(!text.contains("secret-key"));
+	}
+
+	@Test
+	public void uploadDrop_httpError_reportsRequestAndResponseWithoutScreenshotNamesOrApiKey()
+	{
+		RemoteLogListener remoteLogListener = mock(RemoteLogListener.class);
+		manager.setRemoteLogListener(remoteLogListener);
+		respondWith(500);
+
+		manager.uploadDrop("bounty-123", "PlayerName", 20997, "Twisted bow", 1720280000000L,
+			Arrays.asList("Clanmate1", "Clanmate2"), testImage());
+
+		@SuppressWarnings("unchecked")
+		ArgumentCaptor<Map<String, Object>> contextCaptor = ArgumentCaptor.forClass(Map.class);
+		verify(remoteLogListener).onRemoteLogEvent(eq(RemoteLogListener.Level.ERROR),
+			eq("Drop upload returned an HTTP error"), contextCaptor.capture());
+		String context = new Gson().toJson(contextCaptor.getValue());
+
+		assertTrue(context.contains("\"method\":\"POST\""));
+		assertTrue(context.contains("\"url\":\"https://ironkin.example.com/events/bounty-123/submissions\""));
+		assertTrue(context.contains("\"itemid\":20997"));
+		assertTrue(context.contains("\"timestamp\":1720280000000"));
+		assertTrue(context.contains("\"participantCount\":2"));
+		assertTrue(context.contains("\"response\":\"(empty)\""));
+		assertTrue(context.contains("\"httpStatus\":500"));
+		assertTrue(!context.contains("imageData"));
+		assertTrue(!context.contains("PlayerName"));
+		assertTrue(!context.contains("Clanmate1"));
+		assertTrue(!context.contains("secret-key"));
 	}
 
 	@Test
