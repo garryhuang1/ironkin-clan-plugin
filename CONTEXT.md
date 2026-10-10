@@ -150,7 +150,9 @@ else. Note the two auth headers: `x-api-key` for the events and embers endpoints
 ### Flow: personal best
 
 1. `onInteractingChanged` feeds `CurrentBossTracker`, which records the last `BossActivity` the
-   local player fought, in either interaction direction.
+   local player fought, in either interaction direction. `onGameTick` refreshes it while the player
+   and that boss are still targeting each other. The boss expires 100 ticks (60 s) after they were
+   last engaged, and is cleared on logout and world hop (the tick counter restarts).
 2. `onChatMessage` runs `PersonalBestMessageParser.parseTime`. No time means not a PB message.
 3. No current boss, or the boss's `requiredMessagePhrase()` missing from the message, means a
    diagnostic and no submission. The plugin never guesses a boss name.
@@ -164,7 +166,7 @@ enum's Javadoc) and is the one sanctioned exception to the "use gameval constant
 
 | Thread | What runs there |
 | --- | --- |
-| Client thread | The game-event `@Subscribe` handlers (loot, chat, interacting, game state, varbit, varc string, player spawn); anything touching `Client` or `ItemManager.getItemComposition`; `ClanMemberManager.getNearbyGroupComposition()`; every `RaidPartyTracker` method |
+| Client thread | The game-event `@Subscribe` handlers (loot, chat, interacting, game tick, game state, varbit, varc string, player spawn); anything touching `Client` or `ItemManager.getItemComposition`; `ClanMemberManager.getNearbyGroupComposition()`; every `RaidPartyTracker` method |
 | OkHttp pool | Every `Callback.onResponse` / `onFailure` |
 | Shared `ScheduledExecutorService` | Screenshot encoding, retry backoff scheduling, the ember poll, the remote log flush |
 | Swing EDT | All panel mutation; `onPanelActivated`; usually `onConfigChanged` (it fires on whichever thread changed the setting, so do not assume the client thread there) |
@@ -258,3 +260,11 @@ panel, the overlay, or `EmberManager`, so logic worth testing belongs in a manag
   logic it describes lives in `IronkinClanPlugin.handleLootReceived`.
 - The four-argument `DropSubmissionManager.reportDrop` overload has no callers in main code.
 - Ember polling has no toggle of its own: it runs whenever a server URL and API key are set.
+- PB attribution relies on timing alone. Any message containing "new personal best" and a time
+  counts as a PB for whichever supported boss was fought in the last 60 s; only Doom of Mokhaiotl
+  also checks the message wording (`requiredMessagePhrase`). This was enough to fix the reported
+  bug (a Theatre of Blood completion submitted as Leviathan, because the tracked boss never
+  expired), but an unsupported PB within 60 s of a supported kill would still be misattributed.
+  If that comes up, the stronger fix is to give every `BossActivity` a required phrase
+  ("Fight duration" for most, separate wordings for Colosseum, Gauntlet, Inferno, Fight Caves),
+  confirmed against real in-game messages.

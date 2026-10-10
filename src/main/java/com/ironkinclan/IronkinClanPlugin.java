@@ -31,6 +31,7 @@ import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.GameTick;
 import net.runelite.api.events.InteractingChanged;
 import net.runelite.api.events.PlayerSpawned;
 import net.runelite.api.events.VarClientStrChanged;
@@ -306,9 +307,15 @@ public class IronkinClanPlugin extends Plugin
 			}
 			emberManager.start();
 		}
-		else if (state == GameState.LOGIN_SCREEN)
+		else if (state == GameState.LOGIN_SCREEN || state == GameState.HOPPING)
 		{
-			emberManager.stop();
+			if (state == GameState.LOGIN_SCREEN)
+			{
+				emberManager.stop();
+			}
+			// The tick counter restarts across a relog or world hop, so a boss tracked before it
+			// can't be timed against ticks after it.
+			currentBossTracker.reset();
 		}
 	}
 
@@ -365,7 +372,20 @@ public class IronkinClanPlugin extends Plugin
 			return;
 		}
 
-		currentBossTracker.onInteractingChanged(client.getLocalPlayer(), event.getSource(), event.getTarget());
+		currentBossTracker.onInteractingChanged(client.getLocalPlayer(), event.getSource(), event.getTarget(),
+			client.getTickCount());
+	}
+
+	// Keeps the tracked boss fresh for as long as the fight lasts (see CurrentBossTracker.onGameTick).
+	@Subscribe
+	public void onGameTick(GameTick event)
+	{
+		if (!config.enablePersonalBestTracking())
+		{
+			return;
+		}
+
+		currentBossTracker.onGameTick(client.getLocalPlayer(), client.getTickCount());
 	}
 
 	// RuneScape announces a new personal best via a game message rather than any readable
@@ -402,14 +422,14 @@ public class IronkinClanPlugin extends Plugin
 			return;
 		}
 
-		BossActivity boss = currentBossTracker.getCurrentBoss();
+		BossActivity boss = currentBossTracker.getCurrentBoss(client.getTickCount());
 		if (boss == null)
 		{
 			// This fires for plenty of content outside the Hall of Flame list too (raids, Nex,
-			// Barrows, Wintertodt, etc.), so it's a diagnostic rather than a chat-echoed failure -
+			// Barrows, Wintertodt, etc.), and after a supported boss fought too long ago, so it's a diagnostic rather than a chat-echoed failure -
 			// surfaced in the panel log (when enabled) so a user can tell why a PB didn't submit.
 			// Tags are stripped so the panel shows clean text rather than raw <col=...> markup.
-			logDiagnostic("Detected a new personal best (" + time + ") but couldn't identify the boss - not submitting: "
+			logDiagnostic("Detected a new personal best (" + time + ") but no supported boss was fought in the last minute - not submitting: "
 				+ Text.removeTags(event.getMessage()), false);
 			return;
 		}
