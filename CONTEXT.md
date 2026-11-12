@@ -218,7 +218,8 @@ The logging service is a third project. Its base URL is not configurable; it is 
 
 ## Config
 
-Group `ironkin-clan`. Keys: `serverUrl`, `apiKey`, `showDebugLog` (default off),
+Group `ironkin-clan`. Keys: `serverUrl`, `apiKey`, `showSidePanel` (default on; adds or removes
+only the sidebar button, the panel keeps recording while hidden), `showDebugLog` (default off),
 `showEventPasswords` (default on), `enableDropTracking` (default off),
 `enablePersonalBestTracking` (default off), `enableErrorReporting` (default off).
 `installId` is also stored in the group but is not in the interface: `RemoteLogManager` generates

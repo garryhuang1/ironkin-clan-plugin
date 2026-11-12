@@ -130,7 +130,7 @@ public class IronkinClanPlugin extends Plugin
 			.priority(5)
 			.panel(panel)
 			.build();
-		clientToolbar.addNavigation(navButton);
+		updateSidePanel();
 		panel.setLogVisible(config.showDebugLog());
 		panel.setOnActivate(this::onPanelActivated);
 
@@ -194,6 +194,20 @@ public class IronkinClanPlugin extends Plugin
 		emberManager.setRemoteLogListener(null);
 		personalBestManager.setRemoteLogListener(null);
 		remoteLogManager.stop();
+	}
+
+	// Only the sidebar button is added or removed. The panel itself always exists, so it keeps
+	// recording log entries and the latest embers and items while hidden.
+	private void updateSidePanel()
+	{
+		if (config.showSidePanel())
+		{
+			clientToolbar.addNavigation(navButton);
+		}
+		else
+		{
+			clientToolbar.removeNavigation(navButton);
+		}
 	}
 
 	private void onPanelActivated()
@@ -273,6 +287,9 @@ public class IronkinClanPlugin extends Plugin
 					trackedItemManager.fetch();
 					syncRaidParty();
 				}
+				break;
+			case "showSidePanel":
+				updateSidePanel();
 				break;
 			case "showDebugLog":
 				panel.setLogVisible(config.showDebugLog());

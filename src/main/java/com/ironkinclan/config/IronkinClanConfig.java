@@ -30,6 +30,16 @@ public interface IronkinClanConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "showSidePanel",
+		name = "Show side panel",
+		description = "Adds the Ironkin Clan button to the sidebar, which opens the panel with your embers, tracked items and log"
+	)
+	default boolean showSidePanel()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "showDebugLog",
 		name = "Show log",
 		description = "Show a log of drop uploads and diagnostic warnings (e.g. failed item list fetches) in the plugin panel"
