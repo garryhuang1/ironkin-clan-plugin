@@ -142,6 +142,10 @@ else. Note the two auth headers: `x-api-key` for the events and embers endpoints
    Xeric, which exposes no names. Each raid has its own party, replaced only when that raid is
    entered again: leaving the raid or the party must not forget it, because unclaimed loot can be
    collected from the lobby chest afterwards.
+   The first line-up of a new party is read on the game tick after entry, not in the varbit
+   handler: the entry varbit arrives before the rest of that tick's updates, when the players in
+   view are still the ones outside the entrance and the name varcs can still hold the last party.
+   In Chambers, players only count while the top-level world view is an instance.
    A `pvm-entry` drop that is still skipped is reported to the logging service as a warning
    (`reportSkippedGroupBossDrop`), with player counts and the loot source but no names.
 6. `reportDrop` captures the next frame via `DrawManager`, hands off to the executor to PNG- and

@@ -88,6 +88,8 @@ public class RaidPartyTracker
 		onVarbitChanged(VarbitID.RAIDS_CLIENT_INDUNGEON, client.getVarbitValue(VarbitID.RAIDS_CLIENT_INDUNGEON));
 		onVarbitChanged(VarbitID.TOB_CLIENT_PARTYSTATUS, client.getVarbitValue(VarbitID.TOB_CLIENT_PARTYSTATUS));
 		onVarbitChanged(VarbitID.TOA_CLIENT_PARTYSTATUS, client.getVarbitValue(VarbitID.TOA_CLIENT_PARTYSTATUS));
+		// Nothing is in flux here, unlike a real entry, so there is no need to wait for a tick.
+		onGameTick();
 	}
 
 	public void onVarbitChanged(int varbitId, int value)
@@ -98,16 +100,15 @@ public class RaidPartyTracker
 				boolean inside = value > 0;
 				if (inside && !inChambers)
 				{
-					chambersParty.clear();
-					recordVisiblePlayers();
+					chambersParty.startNew();
 				}
 				inChambers = inside;
 				break;
 			case VarbitID.TOB_CLIENT_PARTYSTATUS:
-				tobStatus = onPartyStatusChanged(tobStatus, value, TOB_NAME_VARCS, theatreParty);
+				tobStatus = onPartyStatusChanged(tobStatus, value, theatreParty);
 				break;
 			case VarbitID.TOA_CLIENT_PARTYSTATUS:
-				toaStatus = onPartyStatusChanged(toaStatus, value, TOA_NAME_VARCS, tombsParty);
+				toaStatus = onPartyStatusChanged(toaStatus, value, tombsParty);
 				break;
 			default:
 				break;
@@ -130,10 +131,25 @@ public class RaidPartyTracker
 
 	public void onPlayerSpawned(Player player)
 	{
-		if (inChambers)
+		if (isInsideChambers())
 		{
 			record(chambersParty, player.getName());
 		}
+	}
+
+	// Reads a new party's first line-up. The varbit that announces entry arrives ahead of the
+	// rest of that tick's updates: the players still in view are the ones standing outside the
+	// entrance, and the name varcs can still hold the previous party. Both have settled by the
+	// time the tick ends.
+	public void onGameTick()
+	{
+		if (chambersParty.awaitingLineUp && isInsideChambers())
+		{
+			chambersParty.awaitingLineUp = false;
+			recordVisiblePlayers();
+		}
+		readAwaitedNames(theatreParty, TOB_NAME_VARCS);
+		readAwaitedNames(tombsParty, TOA_NAME_VARCS);
 	}
 
 	// Number of other players remembered in that raid's party, clan members or not.
@@ -189,18 +205,41 @@ public class RaidPartyTracker
 	}
 
 	// Entering the raid starts a fresh party, so a member of an earlier line-up is not carried
-	// into this one. Names set while the party was still forming are re-read here.
-	private int onPartyStatusChanged(int previous, int value, int[] nameVarcs, Party party)
+	// into this one. Names set while the party was still forming are re-read in onGameTick.
+	private int onPartyStatusChanged(int previous, int value, Party party)
 	{
 		if (previous < STATUS_INSIDE && value >= STATUS_INSIDE)
 		{
-			party.clear();
-			for (int varc : nameVarcs)
-			{
-				record(party, client.getVarcStrValue(varc));
-			}
+			party.startNew();
 		}
 		return value;
+	}
+
+	private void readAwaitedNames(Party party, int[] nameVarcs)
+	{
+		if (!party.awaitingLineUp)
+		{
+			return;
+		}
+
+		party.awaitingLineUp = false;
+		for (int varc : nameVarcs)
+		{
+			record(party, client.getVarcStrValue(varc));
+		}
+	}
+
+	// The dungeon is an instance and the area outside its entrance is not, which tells the two
+	// apart on the ticks where the varbit and the player's actual position disagree.
+	private boolean isInsideChambers()
+	{
+		if (!inChambers)
+		{
+			return false;
+		}
+
+		WorldView worldView = client.getTopLevelWorldView();
+		return worldView != null && worldView.isInstance();
 	}
 
 	private void recordVisiblePlayers()
@@ -282,11 +321,20 @@ public class RaidPartyTracker
 		// The subset that was in the clan channel when seen. Kept separately so a clanmate who
 		// logs out after the raid, and so drops out of the channel, is still credited.
 		private final Set<String> clanMembers = new LinkedHashSet<>();
+		// Set on entering the raid, until the first line-up has been read on the next tick.
+		private boolean awaitingLineUp;
 
 		private void clear()
 		{
 			names.clear();
 			clanMembers.clear();
+			awaitingLineUp = false;
+		}
+
+		private void startNew()
+		{
+			clear();
+			awaitingLineUp = true;
 		}
 	}
 }

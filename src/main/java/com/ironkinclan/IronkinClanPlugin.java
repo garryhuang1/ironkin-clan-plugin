@@ -376,16 +376,20 @@ public class IronkinClanPlugin extends Plugin
 			client.getTickCount());
 	}
 
-	// Keeps the tracked boss fresh for as long as the fight lasts (see CurrentBossTracker.onGameTick).
+	// Lets RaidPartyTracker read a new raid party's line-up once the entry tick has settled, and
+	// keeps the tracked boss fresh for as long as the fight lasts (see CurrentBossTracker.onGameTick).
 	@Subscribe
 	public void onGameTick(GameTick event)
 	{
-		if (!config.enablePersonalBestTracking())
+		if (config.enableDropTracking())
 		{
-			return;
+			raidPartyTracker.onGameTick();
 		}
 
-		currentBossTracker.onGameTick(client.getLocalPlayer(), client.getTickCount());
+		if (config.enablePersonalBestTracking())
+		{
+			currentBossTracker.onGameTick(client.getLocalPlayer(), client.getTickCount());
+		}
 	}
 
 	// RuneScape announces a new personal best via a game message rather than any readable
@@ -553,7 +557,8 @@ public class IronkinClanPlugin extends Plugin
 						{
 							List<String> raidClanMembers = raidPartyTracker.getClanMembers(event.getName());
 							logDiagnostic("Raid party for " + event.getName() + ": " + raidClanMembers.size()
-								+ " clan member(s) among " + raidPartyTracker.getPartySize(event.getName()) + " other party member(s)", true);
+								+ " clan member(s) among " + raidPartyTracker.getPartySize(event.getName()) + " other party member(s) "
+								+ raidClanMembers, true);
 							groupComposition = groupComposition.withRaidClanMembers(raidClanMembers);
 						}
 					}

@@ -42,6 +42,7 @@ public class RaidPartyTrackerTest
 		when(client.getTopLevelWorldView()).thenReturn(worldView);
 		when(client.getClanChannel()).thenReturn(clanChannel);
 		when(client.getVarcStrValue(anyInt())).thenReturn("");
+		when(worldView.isInstance()).thenReturn(true);
 		mockVisiblePlayers();
 		inClan("LocalPlayer");
 
@@ -94,9 +95,28 @@ public class RaidPartyTrackerTest
 
 		tracker.onVarbitChanged(VarbitID.TOB_CLIENT_PARTYSTATUS, 1);
 		tracker.onVarbitChanged(VarbitID.TOB_CLIENT_PARTYSTATUS, 2);
+		tracker.onGameTick();
 
 		assertEquals(Collections.singletonList("Clan Mate"), tracker.getClanMembers(THEATRE));
 		assertEquals(2, tracker.getPartySize(THEATRE));
+	}
+
+	@Test
+	public void theatre_namesLeftOverFromThePreviousParty_notReadOnEntry()
+	{
+		inClan("Old Mate");
+		inClan("New Mate");
+		tracker.onVarbitChanged(VarbitID.TOB_CLIENT_PARTYSTATUS, 2);
+		setName(VarClientID.TOB_CLIENT_NAME1, "Old Mate");
+		tracker.onGameTick();
+		tracker.onVarbitChanged(VarbitID.TOB_CLIENT_PARTYSTATUS, 1);
+
+		// The entry varbit lands while the slot still names the previous teammate.
+		tracker.onVarbitChanged(VarbitID.TOB_CLIENT_PARTYSTATUS, 2);
+		setName(VarClientID.TOB_CLIENT_NAME1, "New Mate");
+		tracker.onGameTick();
+
+		assertEquals(Collections.singletonList("New Mate"), tracker.getClanMembers(THEATRE));
 	}
 
 	@Test
@@ -193,10 +213,32 @@ public class RaidPartyTrackerTest
 		mockVisiblePlayers(clanmate, stranger);
 
 		tracker.onVarbitChanged(VarbitID.RAIDS_CLIENT_INDUNGEON, 1);
+		tracker.onGameTick();
 		tracker.onPlayerSpawned(player("Late Mate"));
 
 		assertEquals(Arrays.asList("Clanmate", "Late Mate"), tracker.getClanMembers(CHAMBERS));
 		assertEquals(3, tracker.getPartySize(CHAMBERS));
+	}
+
+	@Test
+	public void chambers_playersOutsideTheEntranceWhenEntering_areNotTheParty()
+	{
+		inClan("Previous Mate");
+		inClan("Clanmate");
+		// Still standing outside: the varbit flips before the player is moved into the dungeon.
+		when(worldView.isInstance()).thenReturn(false);
+		mockVisiblePlayers(player("Previous Mate"));
+
+		tracker.onVarbitChanged(VarbitID.RAIDS_CLIENT_INDUNGEON, 1);
+		tracker.onPlayerSpawned(player("Previous Mate"));
+		tracker.onGameTick();
+		assertTrue(tracker.getClanMembers(CHAMBERS).isEmpty());
+
+		when(worldView.isInstance()).thenReturn(true);
+		mockVisiblePlayers(player("Clanmate"));
+		tracker.onGameTick();
+
+		assertEquals(Collections.singletonList("Clanmate"), tracker.getClanMembers(CHAMBERS));
 	}
 
 	@Test
