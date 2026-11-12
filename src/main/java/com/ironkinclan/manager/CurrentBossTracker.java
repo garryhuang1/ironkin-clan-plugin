@@ -68,6 +68,19 @@ public class CurrentBossTracker
 		}
 	}
 
+	// Stops the tick refresh once the boss is gone, leaving the window to run out from the last
+	// engaged tick. A despawned NPC still answers getInteracting() by looking up its last target's
+	// index, which is the local player for as long as they stay on the world, so without this a
+	// dead boss kept "engaging" the player and every later PB within the session was credited to it
+	// (e.g. Fractured Archive PBs submitted as Leviathan).
+	public void onNpcDespawned(NPC npc)
+	{
+		if (npc == currentBossNpc)
+		{
+			currentBossNpc = null;
+		}
+	}
+
 	/**
 	 * @return the boss the player was engaged with within the last
 	 * {@link #ENGAGEMENT_WINDOW_TICKS} ticks of {@code tick}, or {@code null} if none.

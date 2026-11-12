@@ -33,6 +33,7 @@ import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.InteractingChanged;
+import net.runelite.api.events.NpcDespawned;
 import net.runelite.api.events.PlayerSpawned;
 import net.runelite.api.events.VarClientStrChanged;
 import net.runelite.api.events.VarbitChanged;
@@ -391,6 +392,12 @@ public class IronkinClanPlugin extends Plugin
 
 		currentBossTracker.onInteractingChanged(client.getLocalPlayer(), event.getSource(), event.getTarget(),
 			client.getTickCount());
+	}
+
+	@Subscribe
+	public void onNpcDespawned(NpcDespawned event)
+	{
+		currentBossTracker.onNpcDespawned(event.getNpc());
 	}
 
 	// Lets RaidPartyTracker read a new raid party's line-up once the entry tick has settled, and

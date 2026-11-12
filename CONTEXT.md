@@ -157,6 +157,9 @@ else. Note the two auth headers: `x-api-key` for the events and embers endpoints
    local player fought, in either interaction direction. `onGameTick` refreshes it while the player
    and that boss are still targeting each other. The boss expires 100 ticks (60 s) after they were
    last engaged, and is cleared on logout and world hop (the tick counter restarts).
+   `onNpcDespawned` drops the boss NPC reference so the refresh stops: a despawned NPC still
+   resolves its last target index to the local player, and before this a dead boss stayed
+   current for the whole session (Fractured Archive PBs were submitted as Leviathan).
 2. `onChatMessage` runs `PersonalBestMessageParser.parseTime`. No time means not a PB message.
 3. No current boss, or the boss's `requiredMessagePhrase()` missing from the message, means a
    diagnostic and no submission. The plugin never guesses a boss name.

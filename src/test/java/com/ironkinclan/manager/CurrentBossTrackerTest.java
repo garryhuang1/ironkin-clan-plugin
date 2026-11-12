@@ -153,6 +153,46 @@ public class CurrentBossTrackerTest
 	}
 
 	@Test
+	public void onGameTick_bossDespawnedButStillPointsAtPlayer_expires()
+	{
+		// The reported bug: a dead Leviathan still resolved its last target to the local player,
+		// so the refresh kept it current and a Fractured Archive PB was submitted as Leviathan.
+		NPC boss = npcNamed("The Leviathan");
+		tracker.onInteractingChanged(localPlayer, boss, localPlayer, TICK);
+		when(boss.getInteracting()).thenReturn(localPlayer);
+		tracker.onNpcDespawned(boss);
+
+		int laterTick = TICK + 2 * ENGAGEMENT_WINDOW_TICKS;
+		tracker.onGameTick(localPlayer, laterTick);
+
+		assertNull(tracker.getCurrentBoss(laterTick));
+	}
+
+	@Test
+	public void onNpcDespawned_bossDiesBeforeThePbMessage_stillCredited()
+	{
+		NPC boss = npcNamed("Vorkath");
+		tracker.onInteractingChanged(localPlayer, localPlayer, boss, TICK);
+		tracker.onNpcDespawned(boss);
+
+		assertEquals(BossActivity.VORKATH, tracker.getCurrentBoss(TICK + 5));
+	}
+
+	@Test
+	public void onNpcDespawned_otherNpc_keepsRefreshing()
+	{
+		NPC boss = npcNamed("Vorkath");
+		tracker.onInteractingChanged(localPlayer, localPlayer, boss, TICK);
+		when(localPlayer.getInteracting()).thenReturn(boss);
+		tracker.onNpcDespawned(npcNamed("Giant rat"));
+
+		int killTick = TICK + 3 * ENGAGEMENT_WINDOW_TICKS;
+		tracker.onGameTick(localPlayer, killTick);
+
+		assertEquals(BossActivity.VORKATH, tracker.getCurrentBoss(killTick));
+	}
+
+	@Test
 	public void reset_clearsTrackedBoss()
 	{
 		tracker.onInteractingChanged(localPlayer, localPlayer, npcNamed("Zulrah"), TICK);
