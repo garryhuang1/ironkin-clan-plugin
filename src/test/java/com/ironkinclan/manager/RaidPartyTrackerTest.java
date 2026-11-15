@@ -1,7 +1,9 @@
 package com.ironkinclan.manager;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import net.runelite.api.Client;
 import net.runelite.api.IndexedObjectSet;
 import net.runelite.api.Player;
@@ -30,6 +32,7 @@ public class RaidPartyTrackerTest
 	private WorldView worldView;
 	private ClanChannel clanChannel;
 	private RaidPartyTracker tracker;
+	private final List<String> diagnostics = new ArrayList<>();
 
 	@Before
 	public void setUp()
@@ -47,6 +50,7 @@ public class RaidPartyTrackerTest
 		inClan("LocalPlayer");
 
 		tracker = new RaidPartyTracker(client);
+		tracker.setDiagnosticListener((text, success) -> diagnostics.add((success ? "ok " : "warn ") + text));
 	}
 
 	private static Player player(String name)
@@ -75,6 +79,29 @@ public class RaidPartyTrackerTest
 		tracker.onVarClientStrChanged(varc);
 	}
 
+	// The line-up is withheld until the name slots have stopped changing, and until they differ
+	// from the previous party or the give-up wait elapses. Pumping the give-up covers both.
+	private String lastLineContaining(String fragment)
+	{
+		String found = "";
+		for (String line : diagnostics)
+		{
+			if (line.contains(fragment))
+			{
+				found = line;
+			}
+		}
+		return found;
+	}
+
+	private void finishLineUp()
+	{
+		for (int tick = 0; tick < RaidPartyTracker.LINEUP_GIVE_UP_TICKS; tick++)
+		{
+			tracker.onGameTick();
+		}
+	}
+
 	@Test
 	public void isRaidLoot_matchesTheThreeRaidChests()
 	{
@@ -95,7 +122,7 @@ public class RaidPartyTrackerTest
 
 		tracker.onVarbitChanged(VarbitID.TOB_CLIENT_PARTYSTATUS, 1);
 		tracker.onVarbitChanged(VarbitID.TOB_CLIENT_PARTYSTATUS, 2);
-		tracker.onGameTick();
+		finishLineUp();
 
 		assertEquals(Collections.singletonList("Clan Mate"), tracker.getClanMembers(THEATRE));
 		assertEquals(2, tracker.getPartySize(THEATRE));
@@ -108,13 +135,13 @@ public class RaidPartyTrackerTest
 		inClan("New Mate");
 		tracker.onVarbitChanged(VarbitID.TOB_CLIENT_PARTYSTATUS, 2);
 		setName(VarClientID.TOB_CLIENT_NAME1, "Old Mate");
-		tracker.onGameTick();
+		finishLineUp();
 		tracker.onVarbitChanged(VarbitID.TOB_CLIENT_PARTYSTATUS, 1);
 
 		// The entry varbit lands while the slot still names the previous teammate.
 		tracker.onVarbitChanged(VarbitID.TOB_CLIENT_PARTYSTATUS, 2);
 		setName(VarClientID.TOB_CLIENT_NAME1, "New Mate");
-		tracker.onGameTick();
+		finishLineUp();
 
 		assertEquals(Collections.singletonList("New Mate"), tracker.getClanMembers(THEATRE));
 	}
@@ -125,6 +152,7 @@ public class RaidPartyTrackerTest
 		inClan("Clanmate");
 		tracker.onVarbitChanged(VarbitID.TOB_CLIENT_PARTYSTATUS, 2);
 		setName(VarClientID.TOB_CLIENT_NAME1, "Clanmate");
+		finishLineUp();
 
 		setName(VarClientID.TOB_CLIENT_NAME1, "");
 		// Dying and respawning in the next room must not start a new party.
@@ -140,6 +168,7 @@ public class RaidPartyTrackerTest
 		inClan("Clanmate");
 		tracker.onVarbitChanged(VarbitID.TOB_CLIENT_PARTYSTATUS, 2);
 		setName(VarClientID.TOB_CLIENT_NAME1, "Clanmate");
+		finishLineUp();
 
 		when(clanChannel.findMember("Clanmate")).thenReturn(null);
 
@@ -166,6 +195,7 @@ public class RaidPartyTrackerTest
 		inClan("Clanmate");
 		tracker.onVarbitChanged(VarbitID.TOB_CLIENT_PARTYSTATUS, 2);
 		setName(VarClientID.TOB_CLIENT_NAME1, "Clanmate");
+		finishLineUp();
 
 		tracker.onVarbitChanged(VarbitID.TOB_CLIENT_PARTYSTATUS, 1);
 		setName(VarClientID.TOB_CLIENT_NAME1, "");
@@ -181,6 +211,7 @@ public class RaidPartyTrackerTest
 		inClan("Chambers Mate");
 		tracker.onVarbitChanged(VarbitID.TOB_CLIENT_PARTYSTATUS, 2);
 		setName(VarClientID.TOB_CLIENT_NAME1, "Theatre Mate");
+		finishLineUp();
 		tracker.onVarbitChanged(VarbitID.TOB_CLIENT_PARTYSTATUS, 0);
 
 		tracker.onVarbitChanged(VarbitID.RAIDS_CLIENT_INDUNGEON, 1);
@@ -199,8 +230,83 @@ public class RaidPartyTrackerTest
 		inClan("Clanmate");
 		tracker.onVarbitChanged(VarbitID.TOA_CLIENT_PARTYSTATUS, 2);
 		setName(VarClientID.TOA_CLIENT_NAME7, "Clanmate");
+		finishLineUp();
 
 		assertEquals(Collections.singletonList("Clanmate"), tracker.getClanMembers(TOMBS));
+	}
+
+	@Test
+	public void tombs_smallerParty_doesNotKeepThePreviousRaid()
+	{
+		inClan("oSteezz");
+		inClan("Vibinglron");
+		inClan("itTommy");
+
+		tracker.onVarbitChanged(VarbitID.TOA_CLIENT_PARTYSTATUS, 2);
+		setName(VarClientID.TOA_CLIENT_NAME1, "oSteezz");
+		setName(VarClientID.TOA_CLIENT_NAME2, "Vibinglron");
+		setName(VarClientID.TOA_CLIENT_NAME3, "itTommy");
+		finishLineUp();
+
+		tracker.onVarbitChanged(VarbitID.TOA_CLIENT_PARTYSTATUS, 0);
+
+		// Entry still shows the previous party. A stale slot rewrite in that window, and the
+		// slots that then blank, must not leave the previous raid on this one.
+		tracker.onVarbitChanged(VarbitID.TOA_CLIENT_PARTYSTATUS, 2);
+		tracker.onVarClientStrChanged(VarClientID.TOA_CLIENT_NAME2);
+		setName(VarClientID.TOA_CLIENT_NAME2, "");
+		setName(VarClientID.TOA_CLIENT_NAME3, "");
+		finishLineUp();
+
+		assertEquals(Collections.singletonList("oSteezz"), tracker.getClanMembers(TOMBS));
+		String committed = lastLineContaining("party set to");
+		assertTrue(committed.startsWith("ok "));
+		assertTrue(committed.contains("party set to [oSteezz]"));
+		assertTrue(committed.contains("slots changed from"));
+		assertFalse(committed.contains("never changed"));
+	}
+
+	@Test
+	public void tombs_unchangedSlots_warnThatThePreviousPartyMayHaveBeenKept()
+	{
+		inClan("Old Mate");
+		when(client.getVarcStrValue(VarClientID.TOA_CLIENT_NAME1)).thenReturn("Old Mate");
+
+		tracker.onVarbitChanged(VarbitID.TOA_CLIENT_PARTYSTATUS, 2);
+		finishLineUp();
+
+		assertEquals(Collections.singletonList("Old Mate"), tracker.getClanMembers(TOMBS));
+		String committed = lastLineContaining("party set to");
+		assertTrue(committed.startsWith("warn "));
+		assertTrue(committed.contains("never changed"));
+		assertTrue(committed.contains("Old Mate"));
+	}
+
+	@Test
+	public void tombs_nameArrivingAfterTheLineUp_isIncluded()
+	{
+		inClan("Late Mate");
+		tracker.onVarbitChanged(VarbitID.TOA_CLIENT_PARTYSTATUS, 2);
+		finishLineUp();
+
+		setName(VarClientID.TOA_CLIENT_NAME1, "Late Mate");
+
+		assertEquals(Collections.singletonList("Late Mate"), tracker.getClanMembers(TOMBS));
+	}
+
+	@Test
+	public void tombs_partyFormingOutside_doesNotJoinTheRememberedRaid()
+	{
+		inClan("Old Mate");
+		inClan("Lobby Mate");
+		tracker.onVarbitChanged(VarbitID.TOA_CLIENT_PARTYSTATUS, 2);
+		setName(VarClientID.TOA_CLIENT_NAME1, "Old Mate");
+		finishLineUp();
+
+		tracker.onVarbitChanged(VarbitID.TOA_CLIENT_PARTYSTATUS, 1);
+		setName(VarClientID.TOA_CLIENT_NAME2, "Lobby Mate");
+
+		assertEquals(Collections.singletonList("Old Mate"), tracker.getClanMembers(TOMBS));
 	}
 
 	@Test

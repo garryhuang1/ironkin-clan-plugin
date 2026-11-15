@@ -5,7 +5,7 @@ A RuneLite plugin for the Ironkin clan. It connects your client to the clan's se
 ## Features
 
 - **Tracked item drops.** Fetches the item list for every event active for your API key. When one of those items drops, the plugin screenshots the client and reports the drop to each event that tracks it.
-- **Group boss credit.** For the `pvm-entry` event, clan members standing nearby are credited alongside you. At least one other clan member must be nearby, so solo kills never count for this event.
+- **Group boss credit.** For the `pvm-entry` event, clan members in the fight are credited alongside you. At a raid or an instance boss, the plugin remembers who was in the party even if they leave before the drop. Anywhere else it uses clan members standing nearby. At least one other clan member must have been there, so solo kills never count for this event.
 - **Personal bests.** When the game announces a new personal best at a supported boss, the plugin screenshots it and submits it to the Hall of Flame.
 - **Ember balance.** Shows your ember balance in the side panel and posts a chat message when you are awarded more.
 - **Event passwords.** An in-game overlay lists the password for any active event that has one.
