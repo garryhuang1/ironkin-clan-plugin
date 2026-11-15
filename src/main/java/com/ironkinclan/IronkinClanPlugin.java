@@ -7,6 +7,7 @@ import com.ironkinclan.manager.CurrentBossTracker;
 import com.ironkinclan.manager.DropSubmissionManager;
 import com.ironkinclan.manager.EmberManager;
 import com.ironkinclan.manager.GroupComposition;
+import com.ironkinclan.manager.InstancePartyTracker;
 import com.ironkinclan.manager.PersonalBestManager;
 import com.ironkinclan.manager.PersonalBestMessageParser;
 import com.ironkinclan.manager.RaidPartyTracker;
@@ -101,6 +102,9 @@ public class IronkinClanPlugin extends Plugin
 	private RaidPartyTracker raidPartyTracker;
 
 	@Inject
+	private InstancePartyTracker instancePartyTracker;
+
+	@Inject
 	private EmberManager emberManager;
 
 	@Inject
@@ -141,6 +145,8 @@ public class IronkinClanPlugin extends Plugin
 		trackedItemManager.setDiagnosticListener(this::logDiagnostic);
 		dropSubmissionManager.setListener(this::logUploadEvent);
 		dropSubmissionManager.setDiagnosticListener(this::logDiagnostic);
+		raidPartyTracker.setDiagnosticListener(this::logDiagnostic);
+		instancePartyTracker.setDiagnosticListener(this::logDiagnostic);
 
 		if (config.enableDropTracking())
 		{
@@ -178,8 +184,14 @@ public class IronkinClanPlugin extends Plugin
 		trackedItemManager.reset();
 		dropSubmissionManager.setListener(null);
 		dropSubmissionManager.setDiagnosticListener(null);
+		raidPartyTracker.setDiagnosticListener(null);
+		instancePartyTracker.setDiagnosticListener(null);
 		lastTrackedEvents = Collections.emptyList();
-		clientThread.invoke(raidPartyTracker::reset);
+		clientThread.invoke(() ->
+		{
+			raidPartyTracker.reset();
+			instancePartyTracker.reset();
+		});
 
 		emberManager.stop();
 		emberManager.setListener(null);
@@ -346,6 +358,7 @@ public class IronkinClanPlugin extends Plugin
 			if (client.getGameState() == GameState.LOGGED_IN)
 			{
 				raidPartyTracker.sync();
+				instancePartyTracker.sync();
 			}
 		});
 	}
@@ -376,6 +389,7 @@ public class IronkinClanPlugin extends Plugin
 		if (config.enableDropTracking())
 		{
 			raidPartyTracker.onPlayerSpawned(event.getPlayer());
+			instancePartyTracker.onPlayerSpawned(event.getPlayer());
 		}
 	}
 
@@ -400,7 +414,7 @@ public class IronkinClanPlugin extends Plugin
 		currentBossTracker.onNpcDespawned(event.getNpc());
 	}
 
-	// Lets RaidPartyTracker read a new raid party's line-up once the entry tick has settled, and
+	// Lets RaidPartyTracker read a new raid party's line-up once the name slots have settled, and
 	// keeps the tracked boss fresh for as long as the fight lasts (see CurrentBossTracker.onGameTick).
 	@Subscribe
 	public void onGameTick(GameTick event)
@@ -408,6 +422,7 @@ public class IronkinClanPlugin extends Plugin
 		if (config.enableDropTracking())
 		{
 			raidPartyTracker.onGameTick();
+			instancePartyTracker.onGameTick();
 		}
 
 		if (config.enablePersonalBestTracking())
@@ -546,6 +561,7 @@ public class IronkinClanPlugin extends Plugin
 		// The nearby group is only relevant to the group boss event, so this is looked up at most
 		// once per loot event rather than unconditionally on every drop.
 		GroupComposition groupComposition = null;
+		boolean usedInstanceParty = false;
 
 		for (ItemStack item : event.getItems())
 		{
@@ -585,12 +601,21 @@ public class IronkinClanPlugin extends Plugin
 								+ raidClanMembers, true);
 							groupComposition = groupComposition.withRaidClanMembers(raidClanMembers);
 						}
+						else if (instancePartyTracker.isInInstance())
+						{
+							List<String> instanceClanMembers = instancePartyTracker.getClanMembers();
+							logDiagnostic("Instance party: " + instanceClanMembers.size()
+								+ " clan member(s) among " + instancePartyTracker.getPartySize() + " other player(s) "
+								+ instanceClanMembers, true);
+							groupComposition = groupComposition.withRaidClanMembers(instanceClanMembers);
+							usedInstanceParty = true;
+						}
 					}
 
 					if (!groupComposition.hasClanBackup())
 					{
 						logDiagnostic("Skipping " + itemName + " for " + eventId + ": no other clan member was nearby"
-							+ " or in the raid party (" + groupComposition.clanPlayers + "/" + groupComposition.totalPlayers + ")", false);
+							+ " or in the party (" + groupComposition.clanPlayers + "/" + groupComposition.totalPlayers + ")", false);
 						reportSkippedGroupBossDrop(event, item.getId(), groupComposition);
 						continue;
 					}
@@ -600,6 +625,12 @@ public class IronkinClanPlugin extends Plugin
 
 				dropSubmissionManager.reportDrop(eventId, username, item.getId(), itemName, participants);
 			}
+		}
+
+		// The next kill in this same instance should not keep people who left after this drop.
+		if (usedInstanceParty)
+		{
+			instancePartyTracker.rebaseToPlayersStillPresent();
 		}
 	}
 
@@ -622,6 +653,10 @@ public class IronkinClanPlugin extends Plugin
 		if (raidLoot)
 		{
 			context.put("raidPartySize", raidPartyTracker.getPartySize(event.getName()));
+		}
+		else if (instancePartyTracker.isInInstance())
+		{
+			context.put("instancePartySize", instancePartyTracker.getPartySize());
 		}
 
 		remoteLogManager.log(RemoteLogListener.Level.WARN, "Skipped pvm-entry drop: no other clan member present", context);

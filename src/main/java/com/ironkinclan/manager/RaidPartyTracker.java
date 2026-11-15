@@ -39,6 +39,11 @@ public class RaidPartyTracker
 	// TOA_CLIENT_PARTYSTATUS is assumed to follow the same scheme.
 	private static final int STATUS_INSIDE = 2;
 
+	// The name slots can still show the previous party for a few ticks after entry, and they
+	// update one slot at a time. Wait this long, once the slots have stopped changing, before
+	// accepting that they were already the party for this raid.
+	static final int LINEUP_GIVE_UP_TICKS = 8;
+
 	private static final int[] TOB_NAME_VARCS = {
 		VarClientID.TOB_CLIENT_NAME0,
 		VarClientID.TOB_CLIENT_NAME1,
@@ -60,6 +65,8 @@ public class RaidPartyTracker
 
 	private final Client client;
 
+	private DiagnosticListener diagnosticListener;
+
 	private final Party chambersParty = new Party();
 	private final Party theatreParty = new Party();
 	private final Party tombsParty = new Party();
@@ -72,6 +79,11 @@ public class RaidPartyTracker
 	public RaidPartyTracker(Client client)
 	{
 		this.client = client;
+	}
+
+	public void setDiagnosticListener(DiagnosticListener diagnosticListener)
+	{
+		this.diagnosticListener = diagnosticListener;
 	}
 
 	// Loot Tracker reports raid chests under these names.
@@ -88,7 +100,9 @@ public class RaidPartyTracker
 		onVarbitChanged(VarbitID.RAIDS_CLIENT_INDUNGEON, client.getVarbitValue(VarbitID.RAIDS_CLIENT_INDUNGEON));
 		onVarbitChanged(VarbitID.TOB_CLIENT_PARTYSTATUS, client.getVarbitValue(VarbitID.TOB_CLIENT_PARTYSTATUS));
 		onVarbitChanged(VarbitID.TOA_CLIENT_PARTYSTATUS, client.getVarbitValue(VarbitID.TOA_CLIENT_PARTYSTATUS));
-		// Nothing is in flux here, unlike a real entry, so there is no need to wait for a tick.
+		// Nothing is in flux here, unlike a real entry, so the slots showing now are this raid.
+		commitLineUpIfWaiting(theatreParty, TOB_NAME_VARCS, THEATRE_OF_BLOOD);
+		commitLineUpIfWaiting(tombsParty, TOA_NAME_VARCS, TOMBS_OF_AMASCUT);
 		onGameTick();
 	}
 
@@ -100,15 +114,16 @@ public class RaidPartyTracker
 				boolean inside = value > 0;
 				if (inside && !inChambers)
 				{
-					chambersParty.startNew();
+					chambersParty.startNew(Collections.emptyList());
+					notifyDiagnostic(CHAMBERS_OF_XERIC + ": entered", true);
 				}
 				inChambers = inside;
 				break;
 			case VarbitID.TOB_CLIENT_PARTYSTATUS:
-				tobStatus = onPartyStatusChanged(tobStatus, value, theatreParty);
+				tobStatus = onPartyStatusChanged(tobStatus, value, theatreParty, TOB_NAME_VARCS, THEATRE_OF_BLOOD);
 				break;
 			case VarbitID.TOA_CLIENT_PARTYSTATUS:
-				toaStatus = onPartyStatusChanged(toaStatus, value, tombsParty);
+				toaStatus = onPartyStatusChanged(toaStatus, value, tombsParty, TOA_NAME_VARCS, TOMBS_OF_AMASCUT);
 				break;
 			default:
 				break;
@@ -116,40 +131,60 @@ public class RaidPartyTracker
 	}
 
 	// A party member's name is blanked when they leave, so names are collected as they appear
-	// rather than read once at the chest.
+	// rather than read once at the chest. Until the new raid's line-up has settled, those updates
+	// are ignored: the slots still hold the previous party, and a blank must not be treated as
+	// someone who left this raid.
 	public void onVarClientStrChanged(int index)
 	{
 		if (contains(TOB_NAME_VARCS, index))
 		{
-			record(theatreParty, client.getVarcStrValue(index));
+			if (tobStatus >= STATUS_INSIDE)
+			{
+				recordIfLineUpSettled(theatreParty, client.getVarcStrValue(index), THEATRE_OF_BLOOD);
+			}
 		}
 		else if (contains(TOA_NAME_VARCS, index))
 		{
-			record(tombsParty, client.getVarcStrValue(index));
+			if (toaStatus >= STATUS_INSIDE)
+			{
+				recordIfLineUpSettled(tombsParty, client.getVarcStrValue(index), TOMBS_OF_AMASCUT);
+			}
 		}
 	}
 
 	public void onPlayerSpawned(Player player)
 	{
-		if (isInsideChambers())
+		if (!isInsideChambers())
+		{
+			return;
+		}
+
+		// The first look at the dungeon happens on the following tick, but a player who spawns
+		// before that, already inside the instance, is part of this raid. Logging them as a late
+		// addition waits until that first look has been taken.
+		if (chambersParty.awaitingLineUp)
 		{
 			record(chambersParty, player.getName());
+			return;
 		}
+
+		recordIfLineUpSettled(chambersParty, player.getName(), CHAMBERS_OF_XERIC);
 	}
 
-	// Reads a new party's first line-up. The varbit that announces entry arrives ahead of the
-	// rest of that tick's updates: the players still in view are the ones standing outside the
-	// entrance, and the name varcs can still hold the previous party. Both have settled by the
-	// time the tick ends.
+	// Reads a new party's first line-up. The varbit that announces entry arrives while the name
+	// slots can still hold the previous party, and those slots then update over the following
+	// ticks. The line-up is the first set of names that differs from the slots at entry and has
+	// held still for a tick. If the slots never change, they were already this raid's party.
 	public void onGameTick()
 	{
 		if (chambersParty.awaitingLineUp && isInsideChambers())
 		{
 			chambersParty.awaitingLineUp = false;
 			recordVisiblePlayers();
+			notifyDiagnostic(CHAMBERS_OF_XERIC + ": party set to " + new ArrayList<>(chambersParty.names), true);
 		}
-		readAwaitedNames(theatreParty, TOB_NAME_VARCS);
-		readAwaitedNames(tombsParty, TOA_NAME_VARCS);
+		settleLineUp(theatreParty, TOB_NAME_VARCS, THEATRE_OF_BLOOD);
+		settleLineUp(tombsParty, TOA_NAME_VARCS, TOMBS_OF_AMASCUT);
 	}
 
 	// Number of other players remembered in that raid's party, clan members or not.
@@ -205,28 +240,104 @@ public class RaidPartyTracker
 	}
 
 	// Entering the raid starts a fresh party, so a member of an earlier line-up is not carried
-	// into this one. Names set while the party was still forming are re-read in onGameTick.
-	private int onPartyStatusChanged(int previous, int value, Party party)
+	// into this one. The slots at this moment are remembered only so the later read can tell
+	// them apart from the party that actually enters.
+	private int onPartyStatusChanged(int previous, int value, Party party, int[] nameVarcs, String raidName)
 	{
 		if (previous < STATUS_INSIDE && value >= STATUS_INSIDE)
 		{
-			party.startNew();
+			List<String> atEntry = readNames(nameVarcs);
+			party.startNew(atEntry);
+			notifyDiagnostic(raidName + ": entered, name slots currently " + atEntry, true);
 		}
 		return value;
 	}
 
-	private void readAwaitedNames(Party party, int[] nameVarcs)
+	private void recordIfLineUpSettled(Party party, String rawName, String raidName)
+	{
+		if (party.awaitingLineUp)
+		{
+			return;
+		}
+
+		String name = sanitize(rawName);
+		boolean alreadyPresent = party.names.contains(name);
+		record(party, rawName);
+		if (!name.isEmpty() && !alreadyPresent && party.names.contains(name))
+		{
+			notifyDiagnostic(raidName + ": added " + name + " after the party was set; party is now " + new ArrayList<>(party.names), true);
+		}
+	}
+
+	private void settleLineUp(Party party, int[] nameVarcs, String raidName)
 	{
 		if (!party.awaitingLineUp)
 		{
 			return;
 		}
 
+		List<String> current = readNames(nameVarcs);
+		party.lineupTicks++;
+		List<String> previous = party.namesLastTick != null ? party.namesLastTick : party.namesAtEntry;
+		if (!current.equals(previous))
+		{
+			notifyDiagnostic(raidName + ": name slots changed to " + current, true);
+		}
+
+		boolean changedFromEntry = !current.equals(party.namesAtEntry);
+		boolean stable = party.namesLastTick != null && current.equals(party.namesLastTick);
+		party.namesLastTick = current;
+
+		boolean arrived = changedFromEntry && stable;
+		boolean unchangedAndWaited = !changedFromEntry && stable && party.lineupTicks >= LINEUP_GIVE_UP_TICKS;
+		if (arrived)
+		{
+			commitLineUp(party, current);
+			notifyDiagnostic(raidName + ": party set to " + current + " (slots changed from " + party.namesAtEntry + ")", true);
+		}
+		else if (unchangedAndWaited)
+		{
+			commitLineUp(party, current);
+			notifyDiagnostic(raidName + ": party set to " + current
+				+ " (name slots never changed after entry; this may still be the previous party)", false);
+		}
+	}
+
+	private void commitLineUpIfWaiting(Party party, int[] nameVarcs, String raidName)
+	{
+		if (!party.awaitingLineUp)
+		{
+			return;
+		}
+
+		List<String> current = readNames(nameVarcs);
+		commitLineUp(party, current);
+		notifyDiagnostic(raidName + ": picked up a raid already in progress; party is " + current, true);
+	}
+
+	private void commitLineUp(Party party, List<String> current)
+	{
 		party.awaitingLineUp = false;
+		party.names.clear();
+		party.clanMembers.clear();
+		for (String name : current)
+		{
+			record(party, name);
+		}
+	}
+
+	private List<String> readNames(int[] nameVarcs)
+	{
+		List<String> current = new ArrayList<>();
 		for (int varc : nameVarcs)
 		{
-			record(party, client.getVarcStrValue(varc));
+			String name = sanitize(client.getVarcStrValue(varc));
+			if (!name.isEmpty())
+			{
+				current.add(name);
+			}
 		}
+		return current;
 	}
 
 	// The dungeon is an instance and the area outside its entrance is not, which tells the two
@@ -258,13 +369,7 @@ public class RaidPartyTracker
 
 	private void record(Party party, String rawName)
 	{
-		if (rawName == null)
-		{
-			return;
-		}
-
-		// The party name varcs use non-breaking spaces, unlike Player.getName().
-		String name = Text.sanitize(rawName);
+		String name = sanitize(rawName);
 		if (name.isEmpty())
 		{
 			return;
@@ -302,6 +407,25 @@ public class RaidPartyTracker
 		return localPlayer == null ? null : localPlayer.getName();
 	}
 
+	private void notifyDiagnostic(String text, boolean success)
+	{
+		if (diagnosticListener != null)
+		{
+			diagnosticListener.onDiagnosticEvent(text, success);
+		}
+	}
+
+	private static String sanitize(String rawName)
+	{
+		if (rawName == null)
+		{
+			return "";
+		}
+
+		// The party name varcs use non-breaking spaces, unlike Player.getName().
+		return Text.sanitize(rawName);
+	}
+
 	private static boolean contains(int[] values, int value)
 	{
 		for (int candidate : values)
@@ -321,20 +445,31 @@ public class RaidPartyTracker
 		// The subset that was in the clan channel when seen. Kept separately so a clanmate who
 		// logs out after the raid, and so drops out of the channel, is still credited.
 		private final Set<String> clanMembers = new LinkedHashSet<>();
-		// Set on entering the raid, until the first line-up has been read on the next tick.
+		// Set on entering the raid, until the line-up has settled.
 		private boolean awaitingLineUp;
+		private int lineupTicks;
+		// Names in the slots at the moment entry was announced. Compared against later reads so
+		// the previous party is not committed as this one.
+		private List<String> namesAtEntry = Collections.emptyList();
+		// The last tick's slots, or null until a tick has been observed. The first observation
+		// is never "stable", so a blank frame at entry is not taken as the line-up.
+		private List<String> namesLastTick;
 
 		private void clear()
 		{
 			names.clear();
 			clanMembers.clear();
 			awaitingLineUp = false;
+			lineupTicks = 0;
+			namesAtEntry = Collections.emptyList();
+			namesLastTick = null;
 		}
 
-		private void startNew()
+		private void startNew(List<String> namesAtEntry)
 		{
 			clear();
 			awaitingLineUp = true;
+			this.namesAtEntry = namesAtEntry;
 		}
 	}
 }

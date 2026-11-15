@@ -37,6 +37,7 @@ src/main/java/com/ironkinclan/
     EmberManager.java           Polls the ember balance on a schedule
     ClanMemberManager.java      Counts nearby players and nearby clan members
     RaidPartyTracker.java       Remembers the clan members in the current raid party
+    InstancePartyTracker.java   Remembers who was seen in the current boss instance
     GroupComposition.java       Value object returned by ClanMemberManager
     DiagnosticListener.java     (text, success) callback shared by the managers
     RemoteLogManager.java       Queues, dedupes and batch-sends events to the logging service
@@ -142,10 +143,24 @@ else. Note the two auth headers: `x-api-key` for the events and embers endpoints
    Xeric, which exposes no names. Each raid has its own party, replaced only when that raid is
    entered again: leaving the raid or the party must not forget it, because unclaimed loot can be
    collected from the lobby chest afterwards.
-   The first line-up of a new party is read on the game tick after entry, not in the varbit
-   handler: the entry varbit arrives before the rest of that tick's updates, when the players in
-   view are still the ones outside the entrance and the name varcs can still hold the last party.
+   The first line-up is not taken from the name slots at the moment of entry. Those slots can
+   still hold the previous party, and they update over the following ticks. The line-up is the
+   first set of names that differs from the slots at entry and has held still for a tick, so a
+   smaller raid does not keep everyone from the raid before it. If the slots never change, they
+   were already this raid's party. Names that go blank after that line-up is taken are kept,
+   because that player left this raid rather than a later one. In the lobby, before entry, name
+   changes are ignored so the next party is not merged into the one remembered for the chest.
+   Each of those decisions is written to the panel log through `DiagnosticListener`: the slots at
+   entry, every change while waiting, the party that was committed, and a warning when the slots
+   never changed and the previous party may have been kept. Names added after the party was set
+   are logged too. None of this goes to the logging service.
    In Chambers, players only count while the top-level world view is an instance.
+   A boss instance that is not one of those raids is handled by `InstancePartyTracker`. Everyone
+   seen in the instance is the party for that kill, so a teammate who leaves before the drop is
+   still credited. Leaving the instance, or the instance being rebuilt, forgets that party. After
+   a drop is credited the party is cut down to whoever is still there, so the next kill does not
+   keep people from the previous one. The panel log records entry, additions, the reset, and
+   leaving. None of this goes to the logging service.
    A `pvm-entry` drop that is still skipped is reported to the logging service as a warning
    (`reportSkippedGroupBossDrop`), with player counts and the loot source but no names.
 6. `reportDrop` captures the next frame via `DrawManager`, hands off to the executor to PNG- and
@@ -255,8 +270,9 @@ panel, the overlay, or `EmberManager`, so logic worth testing belongs in a manag
 - **PvP loot is never reported.** `LootRecordType.PLAYER` is dropped on purpose; reporting it would
   crowdsource another player's gear. Do not "fix" this.
 - **Participants are limited to members of the user's own clan channel**, and only for `pvm-entry`.
-  Do not widen this to arbitrary nearby players. `RaidPartyTracker` holds the other raid party
-  names in memory to check them against the clan channel, but only clan members are ever sent.
+  Do not widen this to arbitrary nearby players. `RaidPartyTracker` and `InstancePartyTracker` hold
+  the other players' names in memory to check them against the clan channel, but only clan members
+  are ever sent. The instance party is only sent for a drop that happens while still in that instance.
 - **Loot detection depends on the built-in Loot Tracker plugin being enabled.**
 - **Nothing is written to disk.** All state is in memory and rebuilt from the server. The one
   persisted value is the `installId` config entry.
